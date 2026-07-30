@@ -45,7 +45,7 @@ type ProxyTarget struct {
 var DefaultProxyTargets = []ProxyTarget{
 	{Name: "freebuff-proxy",   Port: 1455, Addr: "127.0.0.1:1455", Type: "Go (Fiber)",    HealthEP: "/healthz", ModelEP: "/v1/models",    APIKey: os.Getenv("FREEBUFF_PROXY_API_KEY"), Tags: "session-mgmt,oauth,anthropic,openai"},
 	{Name: "codebuff-proxy",   Port: 3211, Addr: "127.0.0.1:3211", Type: "TS (Convex)",   HealthEP: "/healthz", ModelEP: "/v1/models",    Tags: "run-cache,freebuff-auto-recovery,sse"},
-	{Name: "freebuff-proxy-8080", Port: 8080, Addr: "127.0.0.1:8080", Type: "Go (Fiber)",    HealthEP: "/healthz", ModelEP: "/v1/models",    Tags: "stealth,multi-instance,ja3"},
+	{Name: "freebuff-proxy-8080", Port: 8080, Addr: "127.0.0.1:8080", Type: "Go (Fiber)",    HealthEP: "/healthz", ModelEP: "/v1/models",    APIKey: os.Getenv("FREEBUFF_PROXY_API_KEY"), Tags: "stealth,multi-instance,ja3"},
 	{Name: "jcode-proxy",      Port: 8088, Addr: "127.0.0.1:8088", Type: "Go (net/http)", HealthEP: "/health",  ModelEP: "/v1/models",    Tags: "api-bridge,streaming"},
 	{Name: "jcode-daemon",     Port: 1456, Addr: "127.0.0.1:1456", Type: "Go (binary)",   HealthEP: "/health",  Tags: "ai-agent,gateway"},
 	{Name: "warp-litellm",     Port: 4001, Addr: "127.0.0.1:4001", Type: "Go (net/http)", HealthEP: "/health",  ModelEP: "/v1/models",    Tags: "load-balancing,fallback"},
