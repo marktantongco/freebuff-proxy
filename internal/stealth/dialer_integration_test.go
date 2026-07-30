@@ -119,7 +119,7 @@ func handleSOCKS5Conn(ctx context.Context, client net.Conn) {
 		return
 	}
 	port := int(buf[0])<<8 | int(buf[1])
-	targetAddr := fmt.Sprintf("%s:%d", host, port)
+	targetAddr := net.JoinHostPort(host, fmt.Sprintf("%d", port))
 
 	// 4. Connect to the target.
 	upstream, err := net.DialTimeout("tcp", targetAddr, 5*time.Second)
