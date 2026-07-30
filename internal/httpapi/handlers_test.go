@@ -123,6 +123,18 @@ func (r *recordingHTTPChatService) Stream(ctx context.Context, req openai.ChatCo
 	return deltas, errs
 }
 
+// mockPool is a test implementation of poolStatsProvider.
+type mockPool struct {
+	statsFunc func() any
+}
+
+func (m mockPool) Stats() any {
+	if m.statsFunc != nil {
+		return m.statsFunc()
+	}
+	return map[string]any{}
+}
+
 func TestHealth(t *testing.T) {
 	app := newTestApp(nil, "")
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -138,6 +150,144 @@ func TestHealth(t *testing.T) {
 	decodeJSON(t, resp, &payload)
 	if payload["status"] != "ok" {
 		t.Fatalf("status payload = %q, beklenen %q", payload["status"], "ok")
+	}
+}
+
+func TestHealth_WithTokenPool(t *testing.T) {
+	pool := mockPool{statsFunc: func() any {
+		return map[string]any{
+			"total_tokens":    2,
+			"active_sessions": 1,
+			"in_use":          0,
+			"locked":          0,
+			"by_model":        map[string]int{"deepseek": 1},
+		}
+	}}
+
+	app := NewApp(Options{
+		Model:     testModel,
+		Chat:      fakeChatService{completeText: "ok"},
+		TokenPool: pool,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	resp := performRequest(t, app, req)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, beklenen %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var payload map[string]any
+	decodeJSON(t, resp, &payload)
+
+	if payload["status"] != "ok" {
+		t.Fatalf("status = %v, beklenen 'ok'", payload["status"])
+	}
+
+	tp, ok := payload["token_pool"]
+	if !ok {
+		t.Fatal("token_pool eksik")
+	}
+
+	tpMap, ok := tp.(map[string]any)
+	if !ok {
+		t.Fatalf("token_pool türü = %T, beklenen map", tp)
+	}
+	if tpMap["total_tokens"] != float64(2) {
+		t.Errorf("total_tokens = %v, beklenen 2", tpMap["total_tokens"])
+	}
+	if tpMap["active_sessions"] != float64(1) {
+		t.Errorf("active_sessions = %v, beklenen 1", tpMap["active_sessions"])
+	}
+	if tpMap["locked"] != float64(0) {
+		t.Errorf("locked = %v, beklenen 0", tpMap["locked"])
+	}
+}
+
+func TestHealth_WithTokenAndProxyPool(t *testing.T) {
+	tokenPool := mockPool{statsFunc: func() any {
+		return map[string]any{
+			"total_tokens":    3,
+			"active_sessions": 0,
+			"in_use":          0,
+			"locked":          0,
+			"by_model":        map[string]int{},
+		}
+	}}
+	proxyPool := mockPool{statsFunc: func() any {
+		return map[string]any{
+			"total":      25,
+			"alive":      20,
+			"dead":       5,
+			"by_country": map[string]int{"US": 15, "DE": 5, "GB": 5},
+		}
+	}}
+
+	app := NewApp(Options{
+		Model:     testModel,
+		Chat:      fakeChatService{completeText: "ok"},
+		TokenPool: tokenPool,
+		ProxyPool: proxyPool,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	resp := performRequest(t, app, req)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, beklenen %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var payload map[string]any
+	decodeJSON(t, resp, &payload)
+
+	// Verify both pools are present.
+	if _, ok := payload["token_pool"]; !ok {
+		t.Fatal("token_pool eksik")
+	}
+	if _, ok := payload["proxy_pool"]; !ok {
+		t.Fatal("proxy_pool eksik")
+	}
+
+	// Verify proxy pool stats.
+	pp := payload["proxy_pool"].(map[string]any)
+	if pp["total"] != float64(25) {
+		t.Errorf("proxy_pool.total = %v, beklenen 25", pp["total"])
+	}
+	if pp["alive"] != float64(20) {
+		t.Errorf("proxy_pool.alive = %v, beklenen 20", pp["alive"])
+	}
+	if pp["dead"] != float64(5) {
+		t.Errorf("proxy_pool.dead = %v, beklenen 5", pp["dead"])
+	}
+}
+
+func TestHealth_WithoutPool(t *testing.T) {
+	app := NewApp(Options{
+		Model:     testModel,
+		Chat:      fakeChatService{completeText: "ok"},
+		TokenPool: nil,
+		ProxyPool: nil,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	resp := performRequest(t, app, req)
+	defer resp.Body.Close()
+
+	var payload map[string]any
+	decodeJSON(t, resp, &payload)
+
+	// Neither pool should appear in the response.
+	if _, ok := payload["token_pool"]; ok {
+		t.Error("token_pool boş olmamalı")
+	}
+	if _, ok := payload["proxy_pool"]; ok {
+		t.Error("proxy_pool boş olmamalı")
+	}
+
+	if payload["status"] != "ok" {
+		t.Fatalf("status = %v, beklenen 'ok'", payload["status"])
 	}
 }
 

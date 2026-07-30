@@ -71,22 +71,35 @@ func (e *ServiceError) Error() string {
 
 const streamHeartbeatInterval = 15 * time.Second
 
+// PoolStatsProvider is the interface that health stats providers must implement.
+// TokenPool and ProxyPool both implement this for /healthz monitoring.
+type PoolStatsProvider interface {
+	Stats() any
+}
+
 type handlers struct {
-	model string
-	chat  ChatService
+	model      string
+	chat       ChatService
+	tokenPool  PoolStatsProvider
+	proxyPool  PoolStatsProvider
 }
 
 type notConfiguredChatService struct{}
 
-func newHandlers(model string, chat ChatService) *handlers {
+func newHandlers(model string, chat ChatService, tokenPool, proxyPool PoolStatsProvider) *handlers {
 	if chat == nil {
 		chat = notConfiguredChatService{}
 	}
 
-	return &handlers{model: model, chat: chat}
+	return &handlers{
+		model:     model,
+		chat:      chat,
+		tokenPool: tokenPool,
+		proxyPool: proxyPool,
+	}
 }
 
-// Health, proxy sürecinin ayakta olduğunu JSON olarak bildirir.
+// Health, proxy sürecinin ayakta olduğunu ve pool durumlarını JSON olarak bildirir.
 //
 // ## Kullanım örneği
 //
@@ -94,7 +107,16 @@ func newHandlers(model string, chat ChatService) *handlers {
 // curl http://127.0.0.1:1455/healthz
 // ```
 func (h *handlers) Health(c fiber.Ctx) error {
-	return c.Status(http.StatusOK).JSON(map[string]string{"status": "ok"})
+	body := map[string]any{"status": "ok"}
+
+	if h.tokenPool != nil {
+		body["token_pool"] = h.tokenPool.Stats()
+	}
+	if h.proxyPool != nil {
+		body["proxy_pool"] = h.proxyPool.Stats()
+	}
+
+	return c.Status(http.StatusOK).JSON(body)
 }
 
 // Models, yapılandırılmış modeli OpenAI model listeleme biçiminde döndürür.

@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
+	"strings"
 
 	"github.com/ferdiunal/freebuff-proxy/internal/app"
 	"github.com/ferdiunal/freebuff-proxy/internal/config"
 	"github.com/ferdiunal/freebuff-proxy/internal/credentials"
+	"github.com/ferdiunal/freebuff-proxy/internal/lock"
 	"github.com/ferdiunal/freebuff-proxy/internal/oauth"
 )
 
@@ -54,12 +57,47 @@ func serve(ctx context.Context, args []string) error {
 		return err
 	}
 
+	// ── Singleton Lock ───────────────────────────────────────────────────
+	// Prevent another freebuff-proxy instance from taking over by acquiring
+	// an exclusive flock on a well-known path. The lock is automatically
+	// released when this process exits — even on crash/kill.
+	lk, err := lock.New(lockFilePath(cfg))
+	if err != nil {
+		return fmt.Errorf("instance lock: %w", err)
+	}
+	defer lk.Release()
+
 	fiberApp, err := app.NewApp(cfg)
 	if err != nil {
 		return err
 	}
 
 	return fiberApp.Listen(cfg.Addr)
+}
+
+// lockFilePath returns the path to the instance lock file.
+// Configurable via FREEBUFF_LOCK_FILE env var; defaults to
+// /tmp/freebuff-proxy-<port>.lock so instances on different ports don't conflict.
+func lockFilePath(cfg config.Config) string {
+	if p := os.Getenv("FREEBUFF_LOCK_FILE"); p != "" {
+		return p
+	}
+	port := extractPort(cfg.Addr)
+	return fmt.Sprintf("/tmp/freebuff-proxy-%s.lock", port)
+}
+
+// extractPort extracts the port from an address string like "127.0.0.1:1455"
+// or "0.0.0.0:8080". Returns "unknown" if the address can't be parsed.
+func extractPort(addr string) string {
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil || port == "" {
+		// Fallback: try splitting on last colon directly.
+		if idx := strings.LastIndex(addr, ":"); idx >= 0 && idx+1 < len(addr) {
+			return addr[idx+1:]
+		}
+		return "unknown"
+	}
+	return port
 }
 
 // login, OAuth doğrulama URL'ini yazdırır ve başarılı olunca credential dosyasını kaydeder.

@@ -27,6 +27,12 @@ type Options struct {
 	Model       string
 	ProxyAPIKey string
 	Chat        ChatService
+
+	// TokenPool is an optional multi-token session pool for /healthz metrics.
+	TokenPool PoolStatsProvider
+
+	// ProxyPool is an optional SOCKS5 proxy pool for /healthz metrics.
+	ProxyPool PoolStatsProvider
 }
 
 // NewApp, sağlık, model listeleme ve sohbet tamamlama rotalarını Fiber v3 ile kurar.
@@ -39,7 +45,8 @@ type Options struct {
 // ```
 func NewApp(opts Options) *fiber.App {
 	app := fiber.New(fiber.Config{AppName: "freebuff-proxy"})
-	handlers := newHandlers(opts.Model, opts.Chat)
+
+	handlers := newHandlers(opts.Model, opts.Chat, opts.TokenPool, opts.ProxyPool)
 
 	if opts.ProxyAPIKey != "" {
 		app.Use(authMiddleware(opts.ProxyAPIKey))

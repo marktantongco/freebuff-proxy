@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/ferdiunal/freebuff-proxy/internal/cache"
 	"github.com/ferdiunal/freebuff-proxy/internal/openai"
 )
 
@@ -40,6 +41,9 @@ var canonicalFreebuffModelsByAlias = map[string]string{
 }
 
 // Complete, Freebuff upstream sohbet uç noktasına Codebuff CLI uyumlu non-stream istek gönderir.
+//
+// Hata durumunda (session_expired, waiting_room_queued vb.) otomatik oturum
+// kurtarma dener. Ported from codebuff-proxy's retryWithFreshFreebuffSession().
 //
 // ## Kullanım örneği
 //
@@ -74,14 +78,76 @@ func (c *Client) Complete(ctx context.Context, token string, activeSession Sessi
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+
+	// Read body before deciding on recovery to preserve error context.
+	bodyBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	resp.Body.Close()
+
+	if readErr != nil && resp.StatusCode >= 400 {
+		return "", chatDecodeError()
+	}
+
+	// ── Session Recovery ────────────────────────────────────────────────────
+	// Only trigger on session-specific error codes (not all 409/429).
+	if resp.StatusCode >= 400 && ShouldRecoverSessionFromResponse(resp.StatusCode, bodyBytes) {
+		cfg := DefaultRecoverSessionConfig()
+		cfg.InstanceID = activeSession.InstanceID
+		newSession, retryOK := c.RetryWithFreshSession(ctx, token, upstreamChatReq.Model, cfg)
+		if retryOK {
+			return c.doComplete(ctx, token, newSession, upstreamChatReq)
+		}
+		return "", makeChatStatusError(resp.StatusCode, bodyBytes)
+	}
+
+	// ── Normal Error Path ───────────────────────────────────────────────────
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return "", makeChatStatusError(resp.StatusCode, bodyBytes)
+	}
+
+	// ── Success Path ────────────────────────────────────────────────────────
+	var payload openai.ChatCompletionResponse
+	if err := json.Unmarshal(bodyBytes, &payload); err != nil {
+		return "", chatDecodeError()
+	}
+
+	if len(payload.Choices) == 0 || payload.Choices[0].Message == nil {
+		return "", chatDecodeError()
+	}
+
+	return payload.Choices[0].Message.Content, nil
+}
+
+// doComplete sends a chat request and decodes the response.
+// Shared between initial call and session recovery retry.
+func (c *Client) doComplete(ctx context.Context, token string, session Session, req openai.ChatCompletionRequest) (string, error) {
+	runID, err := c.startAgentRun(ctx, token, req.Model)
+	if err != nil {
+		return "", err
+	}
+
+	upstreamReq, err := buildUpstreamChatRequest(req, false, runID, session)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := c.doChatRequest(ctx, token, upstreamReq, "application/json")
+	if err != nil {
+		return "", err
+	}
+
+	bodyBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	resp.Body.Close()
+
+	if readErr != nil && resp.StatusCode >= 400 {
+		return "", chatDecodeError()
+	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return "", chatStatusError(resp, chatErrorStageChat)
+		return "", makeChatStatusError(resp.StatusCode, bodyBytes)
 	}
 
 	var payload openai.ChatCompletionResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	if err := json.Unmarshal(bodyBytes, &payload); err != nil {
 		return "", chatDecodeError()
 	}
 
@@ -93,6 +159,9 @@ func (c *Client) Complete(ctx context.Context, token string, activeSession Sessi
 }
 
 // Stream, Freebuff upstream sohbet uç noktasından Codebuff CLI metadata'lı SSE delta akışı okur.
+//
+// Hata durumunda (session_expired, waiting_room_queued vb.) otomatik oturum
+// kurtarma dener. Ported from codebuff-proxy's retryWithFreshFreebuffSession().
 //
 // ## Kullanım örneği
 //
@@ -122,6 +191,68 @@ func (c *Client) Stream(ctx context.Context, token string, activeSession Session
 	}
 
 	upstreamReq, err := buildUpstreamChatRequest(upstreamChatReq, true, runID, activeSession)
+	if err != nil {
+		return failedChatStream(err)
+	}
+
+	resp, err := c.doChatRequest(ctx, token, upstreamReq, "text/event-stream")
+	if err != nil {
+		return failedChatStream(err)
+	}
+
+	// ── Session Recovery for Stream ─────────────────────────────────────────
+	// Only read body on error paths; success paths pass SSE body through.
+	if resp.StatusCode >= 400 {
+		bodyBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+		resp.Body.Close()
+
+		if readErr != nil {
+			return failedChatStream(chatDecodeError())
+		}
+
+		if ShouldRecoverSessionFromResponse(resp.StatusCode, bodyBytes) {
+			cfg := DefaultRecoverSessionConfig()
+			cfg.InstanceID = activeSession.InstanceID
+			newSession, retryOK := c.RetryWithFreshSession(ctx, token, upstreamChatReq.Model, cfg)
+			if retryOK {
+				return c.doStream(ctx, token, newSession, upstreamChatReq)
+			}
+			return failedChatStream(makeChatStatusError(resp.StatusCode, bodyBytes))
+		}
+		return failedChatStream(makeChatStatusError(resp.StatusCode, bodyBytes))
+	}
+
+	// ── Success Path — pass body through for SSE streaming ───────────────────
+	return c.streamFromBody(resp)
+}
+
+// streamFromBody creates delta/errs channels from the SSE response body.
+func (c *Client) streamFromBody(resp *http.Response) (<-chan string, <-chan error) {
+	deltas := make(chan string)
+	errs := make(chan error, 1)
+
+	go func() {
+		defer close(deltas)
+		defer close(errs)
+		defer resp.Body.Close()
+
+		if err := scanChatStream(context.Background(), resp.Body, deltas); err != nil {
+			sendChatError(context.Background(), errs, err)
+		}
+	}()
+
+	return deltas, errs
+}
+
+// doStream sends a streaming chat request and returns delta/errs channels.
+// Shared between initial call and session recovery retry.
+func (c *Client) doStream(ctx context.Context, token string, session Session, req openai.ChatCompletionRequest) (<-chan string, <-chan error) {
+	runID, err := c.startAgentRun(ctx, token, req.Model)
+	if err != nil {
+		return failedChatStream(err)
+	}
+
+	upstreamReq, err := buildUpstreamChatRequest(req, true, runID, session)
 	if err != nil {
 		return failedChatStream(err)
 	}
@@ -181,9 +312,23 @@ type codebuffMetadata struct {
 }
 
 func (c *Client) startAgentRun(ctx context.Context, token string, model string) (string, error) {
+	// ── Run ID Cache Lookup ─────────────────────────────────────────────────
+	// Ported from codebuff-proxy: cache the run_id by hashed API key + agent ID
+	// to avoid redundant API calls on every chat request.
+	if c.RunCache != nil {
+		agentID := agentIDForModel(model)
+		hashedKey := c.RunCache.HashFNV1a(token)
+		cacheKey := cache.BuildAgentRunCacheKey(hashedKey, agentID, "freebuff-proxy")
+		if cached, ok := c.RunCache.Get(cacheKey); ok {
+			return cached, nil
+		}
+	}
+
+	// ── API Call ────────────────────────────────────────────────────────────
+	agentID := agentIDForModel(model)
 	resp, err := c.doJSONRequest(ctx, token, agentRunsEndpointPath, startAgentRunRequest{
 		Action:         "START",
-		AgentID:        agentIDForModel(model),
+		AgentID:        agentID,
 		AncestorRunIDs: []string{},
 	}, "application/json")
 	if err != nil {
@@ -201,6 +346,13 @@ func (c *Client) startAgentRun(ctx context.Context, token string, model string) 
 	}
 	if strings.TrimSpace(payload.RunID) == "" {
 		return "", chatDecodeError()
+	}
+
+	// ── Cache the run_id ────────────────────────────────────────────────────
+	if c.RunCache != nil {
+		hashedKey := c.RunCache.HashFNV1a(token)
+		cacheKey := cache.BuildAgentRunCacheKey(hashedKey, agentID, "freebuff-proxy")
+		c.RunCache.Set(cacheKey, payload.RunID)
 	}
 
 	return payload.RunID, nil
@@ -467,6 +619,25 @@ func safeUpstreamErrorCode(body io.Reader) (string, bool) {
 	return "", false
 }
 
+func safeUpstreamErrorCodeFromBytes(body []byte) (string, bool) {
+	if len(body) == 0 {
+		return "", false
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "", false
+	}
+
+	for _, code := range candidateUpstreamErrorCodes(payload) {
+		if _, ok := safeUpstreamErrorMessages[code]; ok {
+			return code, true
+		}
+	}
+
+	return "", false
+}
+
 func candidateUpstreamErrorCodes(payload map[string]any) []string {
 	var codes []string
 	if code, ok := payload["code"].(string); ok {
@@ -482,6 +653,32 @@ func candidateUpstreamErrorCodes(payload map[string]any) []string {
 	}
 
 	return codes
+}
+
+// makeChatStatusError creates an APIError from a status code and body bytes.
+// Similar to chatStatusError but works with already-consumed response body.
+func makeChatStatusError(statusCode int, body []byte) *APIError {
+	if code, ok := safeUpstreamErrorCodeFromBytes(body); ok {
+		return &APIError{StatusCode: statusCode, Code: code, Message: safeUpstreamErrorMessages[code]}
+	}
+
+	apiErr := &APIError{StatusCode: statusCode}
+	switch statusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		apiErr.Code = "freebuff_auth_failed"
+		apiErr.Message = "Freebuff sohbet yetkilendirmesi başarısız oldu"
+	case http.StatusTooManyRequests:
+		apiErr.Code = "freebuff_rate_limited"
+		apiErr.Message = "Freebuff sohbet limiti aşıldı"
+	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		apiErr.Code = "upstream_chat_unavailable"
+		apiErr.Message = "Freebuff sohbet upstream geçici olarak kullanılamıyor"
+	default:
+		apiErr.Code = "upstream_chat_error"
+		apiErr.Message = fmt.Sprintf("Freebuff sohbet upstream hatası: status %d", statusCode)
+	}
+
+	return apiErr
 }
 
 func chatStreamEventError(code string) *APIError {

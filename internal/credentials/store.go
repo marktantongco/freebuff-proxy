@@ -50,10 +50,19 @@ type filePayload struct {
 }
 
 // Load, dosyadaki varsayılan kimlik bilgisini okur.
+// Acquires a shared read lock to ensure no write is in progress.
 func (s FileStore) Load(ctx context.Context) (Credential, error) {
 	if err := ctx.Err(); err != nil {
 		return Credential{}, err
 	}
+
+	// Shared lock prevents reading during an active write.
+	lk, err := AcquireReadLock(s.Path)
+	if err == nil {
+		defer ReleaseLock(lk)
+	}
+	// If the lock file can't be opened (e.g. permission), proceed anyway —
+	// the lock is advisory and the atomic write pattern ensures consistency.
 
 	data, err := os.ReadFile(s.Path)
 	if err != nil {
@@ -73,6 +82,8 @@ func (s FileStore) Load(ctx context.Context) (Credential, error) {
 }
 
 // Save, varsayılan kimlik bilgisini Manicode dosya biçiminde kaydeder.
+// Acquires an exclusive write lock to prevent concurrent writes
+// from multiple proxy instances (last-writer-wins corruption).
 func (s FileStore) Save(ctx context.Context, cred Credential) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -82,6 +93,8 @@ func (s FileStore) Save(ctx context.Context, cred Credential) error {
 		return ErrMissingToken
 	}
 
+	// Ensure the directory exists BEFORE acquiring the lock, because
+	// the lock file lives in the same directory as the credentials file.
 	dir := filepath.Dir(s.Path)
 	if info, err := os.Stat(dir); err == nil {
 		if !info.IsDir() {
@@ -94,6 +107,13 @@ func (s FileStore) Save(ctx context.Context, cred Credential) error {
 	} else {
 		return fmt.Errorf("stat credentials directory: %w", err)
 	}
+
+	// Exclusive lock prevents concurrent writes.
+	lk, err := AcquireWriteLock(s.Path)
+	if err != nil {
+		return fmt.Errorf("acquire credential write lock: %w", err)
+	}
+	defer ReleaseLock(lk)
 
 	data, err := json.MarshalIndent(filePayload{Default: cred}, "", "  ")
 	if err != nil {
@@ -108,10 +128,18 @@ func (s FileStore) Save(ctx context.Context, cred Credential) error {
 }
 
 // Clear, başarılı logout sonrası yerel kimlik dosyasını güvenli şekilde kaldırır.
+// Acquires an exclusive write lock to prevent concurrent removals.
 func (s FileStore) Clear(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+
+	// Exclusive lock prevents concurrent removals.
+	lk, err := AcquireWriteLock(s.Path)
+	if err != nil {
+		return fmt.Errorf("acquire credential write lock: %w", err)
+	}
+	defer ReleaseLock(lk)
 
 	if err := os.Remove(s.Path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove credentials file: %w", err)

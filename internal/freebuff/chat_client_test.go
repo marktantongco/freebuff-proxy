@@ -584,6 +584,10 @@ func (v *verifiedChatTransport) RoundTrip(req *http.Request) (*http.Response, er
 		}
 		v.chatCount++
 		return v.chat(req)
+	case sessionEndpointPath:
+		// Session endpoint — may be called by session recovery.
+		// Return a non-recoverable result so recovery fails gracefully.
+		return jsonHTTPResponse(req, http.StatusNotFound, `{"status":"none"}`), nil
 	default:
 		v.t.Fatalf("beklenmeyen path: %s", req.URL.Path)
 		return nil, nil

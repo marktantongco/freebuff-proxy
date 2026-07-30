@@ -15,6 +15,19 @@ const defaultPollInterval = 2 * time.Second
 
 var errRetryBootstrap = errors.New("retry freebuff bootstrap with caller context")
 
+// OnModelLocked is an optional callback invoked when the session manager
+// detects a SessionModelLocked status. The token and model are the
+// auth token and requested model that triggered the lock.
+//
+// Wire this in app.go to mark the token in the TokenPool:
+//
+//	manager.OnModelLocked = func(token, model string) {
+//	    if tokenPool != nil {
+//	        tokenPool.MarkTokenLocked(token)
+//	    }
+//	}
+type OnModelLocked func(token, model string)
+
 // Client, oturum yöneticisinin Freebuff oturum API'siyle konuşmak için beklediği bağımlılığı tanımlar.
 //
 // ## Kullanım örneği
@@ -66,6 +79,9 @@ func (e *StatusError) Error() string {
 
 // Manager, Freebuff oturumunun aktif olmasını sağlayan ve başlatma yarışını tekilleştiren bileşendir.
 //
+// OnModelLocked callback'i, TokenPool ile entegre edilerek model-locked
+// oturumların /healthz'de görünmesini sağlar.
+//
 // ## Kullanım örneği
 //
 // ```go
@@ -86,6 +102,10 @@ type Manager struct {
 	InstanceID   string
 	PollInterval time.Duration
 	MaxPolls     int
+
+	// OnModelLocked is called when a session is detected as model_locked.
+	// Wire this in app.go to mark the token in the TokenPool.
+	OnModelLocked OnModelLocked
 
 	mu        sync.Mutex
 	bootstrap *bootstrapCall
@@ -156,6 +176,9 @@ func (m *Manager) resolveSession(ctx context.Context, token string, model string
 		freebuff.SessionModelUnavailable,
 		freebuff.SessionBanned,
 		freebuff.SessionRateLimited:
+		if session.Status == freebuff.SessionModelLocked && m.OnModelLocked != nil {
+			m.OnModelLocked(token, model)
+		}
 		return freebuff.Session{}, &StatusError{Status: session.Status, Message: session.Message}
 	default:
 		return freebuff.Session{}, fmt.Errorf("unknown freebuff session status %q", session.Status)
@@ -221,6 +244,9 @@ func (m *Manager) ensureBootstrap(ctx context.Context, token string, model strin
 		freebuff.SessionModelUnavailable,
 		freebuff.SessionBanned,
 		freebuff.SessionRateLimited:
+		if current.Status == freebuff.SessionModelLocked && m.OnModelLocked != nil {
+			m.OnModelLocked(token, model)
+		}
 		call.err = &StatusError{Status: current.Status, Message: current.Message}
 		return freebuff.Session{}, call.err
 	case freebuff.SessionNone, freebuff.SessionEnded, freebuff.SessionSuperseded:

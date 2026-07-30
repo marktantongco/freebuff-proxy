@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{.Title}}</title>
+<style>
+  :root {
+    --bg: #0a0e17;
+    --surface: rgba(255,255,255,0.04);
+    --surface-hover: rgba(255,255,255,0.08);
+    --border: rgba(255,255,255,0.08);
+    --text: #e2e8f0;
+    --text-dim: #8892a4;
+    --green: #22c55e;
+    --green-glow: rgba(34,197,94,0.3);
+    --red: #ef4444;
+    --red-glow: rgba(239,68,68,0.3);
+    --amber: #f59e0b;
+    --blue: #3b82f6;
+    --purple: #8b5cf6;
+    --cyan: #06b6d4;
+    --pink: #ec4899;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+
+  .bg-glow {
+    position: fixed; top: -50%; left: -50%; width: 200%; height: 200%;
+    background: radial-gradient(ellipse at 30% 20%, rgba(59,130,246,0.08) 0%, transparent 60%),
+                radial-gradient(ellipse at 70% 80%, rgba(139,92,246,0.06) 0%, transparent 60%);
+    pointer-events: none; z-index: 0;
+  }
+
+  .container { max-width: 1280px; margin: 0 auto; padding: 24px 20px; position: relative; z-index: 1; }
+
+  /* Header */
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 24px; margin-bottom: 24px;
+    background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+    border-radius: 16px; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  }
+  .header-left { display: flex; align-items: center; gap: 14px; }
+  .header-icon {
+    width: 40px; height: 40px; border-radius: 12px;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; font-weight: 700; color: white;
+  }
+  .header h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.3px; }
+  .header-subtitle { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+  .header-right { display: flex; align-items: center; gap: 16px; }
+  .header-badge {
+    padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 500;
+    background: rgba(255,255,255,0.06); border: 1px solid var(--border);
+  }
+  .header-badge span { font-weight: 700; }
+  .header-badge.up span { color: var(--green); }
+  .header-badge.down span { color: var(--red); }
+  .header-refresh { font-size: 12px; color: var(--text-dim); }
+
+  /* Summary Cards */
+  .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+  .summary-card {
+    padding: 16px 20px; border-radius: 12px;
+    background: var(--surface); border: 1px solid var(--border);
+    position: relative; overflow: hidden;
+    transition: background 0.2s, transform 0.2s;
+  }
+  .summary-card:hover { background: var(--surface-hover); transform: translateY(-1px); }
+  .summary-card .label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .summary-card .value { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+  .summary-card .sub { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+  .summary-card .glow {
+    position: absolute; top: -50%; right: -50%; width: 100%; height: 100%;
+    border-radius: 50%; pointer-events: none; opacity: 0.15;
+  }
+  .summary-card.green .value { color: var(--green); }
+  .summary-card.green .glow { background: radial-gradient(circle, var(--green) 0%, transparent 70%); }
+  .summary-card.amber .value { color: var(--amber); }
+  .summary-card.amber .glow { background: radial-gradient(circle, var(--amber) 0%, transparent 70%); }
+  .summary-card.blue .value { color: var(--blue); }
+  .summary-card.blue .glow { background: radial-gradient(circle, var(--blue) 0%, transparent 70%); }
+  .summary-card.purple .value { color: var(--purple); }
+  .summary-card.purple .glow { background: radial-gradient(circle, var(--purple) 0%, transparent 70%); }
+
+  /* Proxy Grid */
+  .proxy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 14px; }
+
+  /* Proxy Card */
+  .proxy-card {
+    border-radius: 14px; overflow: hidden;
+    background: var(--surface); border: 1px solid var(--border);
+    transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+    position: relative;
+  }
+  .proxy-card:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.15); }
+  .proxy-card.up { border-left: 3px solid var(--green); }
+  .proxy-card.down { border-left: 3px solid var(--red); }
+  .proxy-card.loading { border-left: 3px solid var(--amber); }
+
+  .proxy-header {
+    padding: 14px 16px 10px;
+    display: flex; align-items: flex-start; justify-content: space-between;
+  }
+  .proxy-name-group { display: flex; align-items: center; gap: 10px; }
+  .proxy-status-dot {
+    width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+    transition: all 0.3s;
+  }
+  .proxy-status-dot.up { background: var(--green); box-shadow: 0 0 8px var(--green-glow); }
+  .proxy-status-dot.down { background: var(--red); box-shadow: 0 0 8px var(--red-glow); }
+  .proxy-status-dot.loading { background: var(--amber); animation: pulse 1s infinite; }
+
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  .proxy-name { font-size: 14px; font-weight: 600; }
+  .proxy-port { font-size: 11px; color: var(--text-dim); font-family: 'SF Mono', 'Cascadia Code', monospace; margin-top: 1px; }
+  .proxy-badge-group { display: flex; gap: 6px; flex-wrap: wrap; }
+  .proxy-badge {
+    padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 500;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.05);
+    color: var(--text-dim);
+  }
+
+  .proxy-body { padding: 0 16px 14px; }
+  .proxy-metrics {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px;
+  }
+  .proxy-metric {
+    padding: 8px 10px; border-radius: 8px;
+    background: rgba(255,255,255,0.02);
+  }
+  .proxy-metric .m-label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.3px; }
+  .proxy-metric .m-value { font-size: 14px; font-weight: 600; margin-top: 2px; font-family: 'SF Mono', monospace; }
+  .proxy-metric .m-value.good { color: var(--green); }
+  .proxy-metric .m-value.warn { color: var(--amber); }
+  .proxy-metric .m-value.bad { color: var(--red); }
+
+  .proxy-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+  .proxy-tag {
+    padding: 2px 8px; border-radius: 4px; font-size: 9px; font-weight: 500;
+    background: rgba(255,255,255,0.04); color: var(--text-dim);
+    border: 1px solid rgba(255,255,255,0.04);
+  }
+
+  .proxy-error {
+    margin: 0 16px 14px; padding: 10px 12px; border-radius: 8px;
+    background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.15);
+    font-size: 12px; color: #fca5a5; font-family: 'SF Mono', monospace;
+  }
+
+  .proxy-raw-toggle {
+    padding: 8px 16px 14px; font-size: 11px; color: var(--text-dim);
+    cursor: pointer; transition: color 0.2s;
+  }
+  .proxy-raw-toggle:hover { color: var(--text); }
+  .proxy-raw {
+    margin: 0 16px 14px; padding: 10px 12px; border-radius: 8px;
+    background: rgba(0,0,0,0.2); font-size: 10px; font-family: 'SF Mono', monospace;
+    color: var(--text-dim); white-space: pre-wrap; word-break: break-all;
+    max-height: 200px; overflow-y: auto; display: none;
+  }
+  .proxy-raw.show { display: block; }
+  .proxy-raw .key { color: var(--cyan); }
+  .proxy-raw .string { color: var(--green); }
+  .proxy-raw .number { color: var(--amber); }
+  .proxy-raw .bool { color: var(--purple); }
+  .proxy-raw .null { color: var(--red); }
+
+  /* Footer */
+  .footer {
+    margin-top: 32px; padding: 12px 0;
+    text-align: center; font-size: 11px; color: var(--text-dim);
+    border-top: 1px solid var(--border);
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .summary-grid { grid-template-columns: repeat(2, 1fr); }
+    .proxy-grid { grid-template-columns: 1fr; }
+    .header { flex-direction: column; gap: 12px; align-items: flex-start; }
+    .header-right { width: 100%; justify-content: space-between; }
+  }
+</style>
+</head>
+<body>
+<div class="bg-glow"></div>
+<div class="container">
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <div class="header-icon">F</div>
+      <div>
+        <h1>Freebuff Dashboard</h1>
+        <div class="header-subtitle">Unified Proxy Monitor</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="header-badge" id="totalBadge">
+        <span id="totalCount">0</span> targets
+      </div>
+      <div class="header-badge up" id="upBadge">
+        <span id="upCount">0</span> up
+      </div>
+      <div class="header-badge down" id="downBadge">
+        <span id="downCount">0</span> down
+      </div>
+      <div class="header-refresh" id="refreshInfo">polling...</div>
+    </div>
+  </div>
+
+  <!-- Summary -->
+  <div class="summary-grid" id="summaryGrid">
+    <div class="summary-card green"><div class="glow"></div><div class="label">Proxies Up</div><div class="value" id="sumUp">-</div><div class="sub" id="sumUpSub">of 7 total</div></div>
+    <div class="summary-card amber"><div class="glow"></div><div class="label">Avg Latency</div><div class="value" id="sumLatency">-</div><div class="sub">response time</div></div>
+    <div class="summary-card blue"><div class="glow"></div><div class="label">Fastest</div><div class="value" id="sumFastest">-</div><div class="sub" id="sumFastestName">proxy</div></div>
+    <div class="summary-card purple"><div class="glow"></div><div class="label">Models</div><div class="value" id="sumModels">-</div><div class="sub">total across proxies</div></div>
+  </div>
+
+  <!-- Proxy Grid -->
+  <div class="proxy-grid" id="proxyGrid">
+    <div style="grid-column:1/-1; text-align:center; padding:40px; color:var(--text-dim);">
+      <div style="font-size:14px;">Waiting for data...</div>
+      <div style="font-size:11px; margin-top:6px;">Probing proxy endpoints</div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    freebuff-dashboard · Polling every <span id="footerInterval">5s</span> ·
+    <span id="footerTime">-</span>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+const COLORS = {
+  green: '#22c55e', red: '#ef4444', amber: '#f59e0b',
+  blue: '#3b82f6', purple: '#8b5cf6', cyan: '#06b6d4', pink: '#ec4899'
+};
+
+const TYPE_COLORS = {
+  'Go (Fiber)': 'blue', 'Go (net/http)': 'cyan', 'Go (binary)': 'cyan',
+  'TS (Convex)': 'purple', 'Node.js': 'green', 'Python': 'amber',
+  'Python3': 'amber', 'Rust': 'pink'
+};
+
+let lastData = null;
+let startTime = Date.now();
+
+function formatLatency(ms) {
+  if (ms < 1) return '<1ms';
+  if (ms < 1000) return ms.toFixed(0) + 'ms';
+  return (ms / 1000).toFixed(1) + 's';
+}
+
+function formatUptime(raw) {
+  if (!raw) return '-';
+  if (typeof raw === 'number') {
+    const h = Math.floor(raw / 3600);
+    const m = Math.floor((raw % 3600) / 60);
+    const s = Math.floor(raw % 60);
+    return (h ? h + 'h ' : '') + (m ? m + 'm ' : '') + s + 's';
+  }
+  if (typeof raw === 'string' && raw.includes('h')) return raw;
+  return String(raw);
+}
+
+function escapeHTML(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function jsonHighlight(obj) {
+  const json = JSON.stringify(obj, null, 2);
+  return escapeHTML(json)
+    .replace(/"([^"]+)":/g, '<span class="key">"$1"</span>:')
+    .replace(/: "([^"]+)"/g, ': <span class="string">"$1"</span>')
+    .replace(/: (\d+\.?\d*)/g, ': <span class="number">$1</span>')
+    .replace(/: (true|false)/g, ': <span class="bool">$1</span>')
+    .replace(/: (null)/g, ': <span class="null">$1</span>');
+}
+
+function renderSummary(data) {
+  const s = data.summary;
+  document.getElementById('sumUp').textContent = s.up + '/' + s.total;
+  document.getElementById('sumUpSub').textContent = s.down + ' down · ' + s.total + ' total';
+  document.getElementById('sumLatency').textContent = s.avg_latency_ms ? formatLatency(s.avg_latency_ms) : '-';
+  document.getElementById('sumFastest').textContent = s.min_ms >= 0 ? formatLatency(s.min_ms) : '-';
+
+  // Find fastest proxy name
+  let fastestName = '-';
+  if (s.min_ms >= 0) {
+    for (const st of data.statuses) {
+      if (st.up && st.latency_ms === s.min_ms) {
+        fastestName = st.proxy.name;
+        break;
+      }
+    }
+  }
+  document.getElementById('sumFastestName').textContent = fastestName;
+
+  // Count models
+  let models = 0;
+  for (const st of data.statuses) {
+    if (st.models) models += st.models;
+  }
+  document.getElementById('sumModels').textContent = models || '-';
+
+  // Header badges
+  document.getElementById('totalCount').textContent = s.total;
+  document.getElementById('upCount').textContent = s.up;
+  document.getElementById('downCount').textContent = s.down;
+  document.getElementById('upBadge').className = 'header-badge ' + (s.up > 0 ? 'up' : '');
+  document.getElementById('downBadge').className = 'header-badge ' + (s.down > 0 ? 'down' : '');
+
+  const elapsed = Math.floor((Date.now() - startTime) / 1000);
+  document.getElementById('refreshInfo').textContent = 'uptime ' + Math.floor(elapsed / 60) + 'm ' + (elapsed % 60) + 's';
+}
+
+function renderProxyCard(st) {
+  const isUp = st.up;
+  const cardClass = isUp ? 'up' : 'down';
+  const latency = st.latency_ms;
+  const typeColor = TYPE_COLORS[st.proxy.type] || 'blue';
+
+  let latencyClass = 'good';
+  if (isUp) {
+    if (latency > 1000) latencyClass = 'bad';
+    else if (latency > 300) latencyClass = 'warn';
+  } else {
+    latencyClass = 'bad';
+  }
+
+  const tags = st.proxy.tags ? st.proxy.tags.split(',') : [];
+  const raw = st.raw || {};
+  const rawKeys = Object.keys(raw);
+
+  // Extract useful info from raw response
+  let uptimeStr = '-';
+  let versionStr = '-';
+  let extraInfo = '';
+
+  if (raw) {
+    if (raw.uptime) uptimeStr = formatUptime(raw.uptime);
+    if (raw.uptime_sec) uptimeStr = formatUptime(raw.uptime_sec);
+    if (raw.version) versionStr = String(raw.version);
+    if (raw.status) extraInfo = 'status: ' + raw.status;
+    if (raw.gateway) extraInfo = 'gateway: ✓';
+    if (raw.service) extraInfo = 'service: ' + raw.service;
+  }
+
+  const badgeColors = {
+    'Go (Fiber)': 'blue', 'Go (net/http)': 'cyan', 'Go (binary)': 'cyan',
+    'Node.js': 'green', 'TS (Convex)': 'purple', 'Python': 'amber'
+  };
+  const typeBadgeColor = badgeColors[st.proxy.type] || 'blue';
+
+  return `
+    <div class="proxy-card ${cardClass}">
+      <div class="proxy-header">
+        <div class="proxy-name-group">
+          <div class="proxy-status-dot ${isUp ? 'up' : 'down'}"></div>
+          <div>
+            <div class="proxy-name">${escapeHTML(st.proxy.name)}</div>
+            <div class="proxy-port">${escapeHTML(st.proxy.addr)}</div>
+          </div>
+        </div>
+        <div class="proxy-badge-group">
+          <span class="proxy-badge" style="background:rgba(59,130,246,0.1);color:${COLORS[typeBadgeColor]}">
+            ${escapeHTML(st.proxy.type)}
+          </span>
+          ${st.models ? `<span class="proxy-badge" style="background:rgba(34,197,94,0.1);color:${COLORS.green}">${st.models} models</span>` : ''}
+        </div>
+      </div>
+
+      <div class="proxy-body">
+        <div class="proxy-metrics">
+          <div class="proxy-metric">
+            <div class="m-label">Latency</div>
+            <div class="m-value ${latencyClass}">${isUp ? formatLatency(latency) : '—'}</div>
+          </div>
+          <div class="proxy-metric">
+            <div class="m-label">Uptime</div>
+            <div class="m-value">${escapeHTML(uptimeStr)}</div>
+          </div>
+          <div class="proxy-metric">
+            <div class="m-label">Version</div>
+            <div class="m-value" style="font-size:12px">${escapeHTML(versionStr)}</div>
+          </div>
+        </div>
+
+        ${extraInfo ? `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">${escapeHTML(extraInfo)}</div>` : ''}
+
+        <div class="proxy-tags">
+          ${tags.map(t => `<span class="proxy-tag">${escapeHTML(t.trim())}</span>`).join('')}
+        </div>
+      </div>
+
+      ${!isUp && st.error ? `<div class="proxy-error">${escapeHTML(st.error)}</div>` : ''}
+
+      ${rawKeys.length > 0 ? `
+        <div class="proxy-raw-toggle" onclick="toggleRaw(this)">▸ Show raw response</div>
+        <div class="proxy-raw">${jsonHighlight(raw)}</div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function renderCards(data) {
+  const grid = document.getElementById('proxyGrid');
+  grid.innerHTML = data.statuses.map(st => renderProxyCard(st)).join('');
+}
+
+function toggleRaw(el) {
+  const raw = el.nextElementSibling;
+  const isShow = raw.classList.contains('show');
+  raw.classList.toggle('show');
+  el.textContent = isShow ? '▸ Show raw response' : '▾ Hide raw response';
+}
+
+function updateTime() {
+  const now = new Date();
+  document.getElementById('footerTime').textContent = now.toLocaleTimeString();
+}
+
+function handleData(data) {
+  lastData = data;
+  renderSummary(data);
+  renderCards(data);
+  updateTime();
+}
+
+// SSE connection with auto-reconnect
+function connectSSE() {
+  const evtSource = new EventSource('/api/status/stream');
+  evtSource.onmessage = function(event) {
+    try {
+      const data = JSON.parse(event.data);
+      handleData(data);
+    } catch (e) {
+      console.error('SSE parse error:', e);
+    }
+  };
+  evtSource.onerror = function() {
+    evtSource.close();
+    // Fallback to polling
+    console.log('SSE disconnected, falling back to polling');
+    startPolling();
+  };
+
+  // Auto-close SSE after 30s if it keeps failing, switch to polling
+  setTimeout(() => {
+    if (!lastData) {
+      evtSource.close();
+      startPolling();
+    }
+  }, 15000);
+}
+
+let pollTimer = null;
+function startPolling() {
+  if (pollTimer) return;
+  fetchData();
+  pollTimer = setInterval(fetchData, 5000);
+}
+
+async function fetchData() {
+  try {
+    const resp = await fetch('/api/status');
+    if (resp.ok) {
+      const data = await resp.json();
+      handleData(data);
+    }
+  } catch (e) {
+    console.error('Poll error:', e);
+  }
+}
+
+// Init
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('footerInterval').textContent = '5s';
+  connectSSE();
+  setInterval(updateTime, 1000);
+});
+</script>
+</body>
+</html>

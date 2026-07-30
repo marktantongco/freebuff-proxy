@@ -465,9 +465,12 @@ func TestManagerEnsureActiveConcurrentCallsWithDifferentModelsRetryBootstrap(t *
 			{Status: freebuff.SessionNone},
 			{Status: freebuff.SessionNone},
 			{Status: freebuff.SessionNone},
+			{Status: freebuff.SessionNone},
+			{Status: freebuff.SessionNone},
 		},
 		startSessions: []freebuff.Session{
 			{Status: freebuff.SessionActive, InstanceID: "instance-1", Model: "claude-sonnet"},
+			{Status: freebuff.SessionActive, InstanceID: "instance-1", Model: "claude-opus"},
 			{Status: freebuff.SessionActive, InstanceID: "instance-1", Model: "claude-opus"},
 		},
 		sessionAfterStart: freebuff.Session{Status: freebuff.SessionActive, InstanceID: "instance-1", Model: "claude-sonnet"},

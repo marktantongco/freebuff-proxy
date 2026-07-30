@@ -29,7 +29,7 @@ func TestNewClientRejectsInvalidBaseURL(t *testing.T) {
 
 	for _, baseURL := range testCases {
 		t.Run(baseURL, func(t *testing.T) {
-			_, err := NewClient(baseURL, nil)
+			_, err := NewClient(baseURL, nil, nil, "", nil)
 			if err == nil {
 				t.Fatalf("NewClient(%q) hata döndürmedi", baseURL)
 			}
@@ -40,7 +40,7 @@ func TestNewClientRejectsInvalidBaseURL(t *testing.T) {
 func TestNewClientUsesBoundedDefaultHTTPClient(t *testing.T) {
 	t.Parallel()
 
-	client, err := NewClient("https://freebuff.example.test", nil)
+	client, err := NewClient("https://freebuff.example.test", nil, nil, "", nil)
 	if err != nil {
 		t.Fatalf("NewClient hata döndürdü: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestNewClientPreservesCustomHTTPClient(t *testing.T) {
 	t.Parallel()
 
 	custom := &http.Client{Timeout: time.Second}
-	client, err := NewClient("https://freebuff.example.test", custom)
+	client, err := NewClient("https://freebuff.example.test", custom, nil, "", nil)
 	if err != nil {
 		t.Fatalf("NewClient hata döndürdü: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestClientGetSessionUsesEndpointAndHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(server.URL, server.Client())
+	client, err := NewClient(server.URL, server.Client(), nil, "", nil)
 	if err != nil {
 		t.Fatalf("NewClient hata döndürdü: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestClientStartSessionUsesPostAndModelHeader(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(server.URL, server.Client())
+	client, err := NewClient(server.URL, server.Client(), nil, "", nil)
 	if err != nil {
 		t.Fatalf("NewClient hata döndürdü: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestClientEndSessionReturnsEndedStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(server.URL, server.Client())
+	client, err := NewClient(server.URL, server.Client(), nil, "", nil)
 	if err != nil {
 		t.Fatalf("NewClient hata döndürdü: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestClientMapsRateLimitResponseToAPIError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(server.URL, server.Client())
+	client, err := NewClient(server.URL, server.Client(), nil, "", nil)
 	if err != nil {
 		t.Fatalf("NewClient hata döndürdü: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestClientReturnsDecodeErrorForBadSuccessJSON(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(server.URL, server.Client())
+	client, err := NewClient(server.URL, server.Client(), nil, "", nil)
 	if err != nil {
 		t.Fatalf("NewClient hata döndürdü: %v", err)
 	}

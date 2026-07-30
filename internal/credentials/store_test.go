@@ -212,6 +212,10 @@ func TestFileStoreSavePreservesExistingDirectoryPermissionsAndCleansTempFiles(t 
 		t.Fatalf("üst dizin listelenemedi: %v", err)
 	}
 	for _, entry := range entries {
+		// The .lock file is a persistent advisory flock file, not a temp file.
+		if entry.Name() == "credentials.json.lock" {
+			continue
+		}
 		if entry.Name() != "credentials.json" {
 			t.Fatalf("geçici dosya temizlenmedi: %s", entry.Name())
 		}

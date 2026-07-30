@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/ferdiunal/freebuff-proxy/internal/cache"
+	"github.com/ferdiunal/freebuff-proxy/internal/stealth"
 )
 
 const (
@@ -18,12 +21,16 @@ const (
 	defaultResponseHeaderTimeout = 30 * time.Second
 )
 
-// Client, Freebuff oturum uç noktasına istek gönderen HTTP istemcisidir.
+// Client, Freebuff oturum ve sohbet uç noktalarına istek gönderen HTTP istemcisidir.
+//
+// RunCache, tekrarlanan agent run ID oluşturma çağrılarını önlemek için
+// FNV-1a hash anahtarlarıyla run_id'leri önbelleğe alır.
+// Ported from codebuff-proxy's run_id caching pattern.
 //
 // ## Kullanım örneği
 //
 // ```go
-// client, err := freebuff.NewClient("https://proxy.example.com", nil)
+// client, err := freebuff.NewClient("https://proxy.example.com", nil, nil)
 //
 //	if err != nil {
 //		return err
@@ -40,10 +47,15 @@ const (
 type Client struct {
 	baseURL    *url.URL
 	httpClient *http.Client
+	RunCache   *cache.RunCache
 }
 
 // NewClient, temel Freebuff proxy adresinden yeni bir oturum istemcisi oluşturur.
-func NewClient(baseURL string, httpClient *http.Client) (*Client, error) {
+// runCache parametresi isteğe bağlıdır; nil değer kabul edilir (önbellekleme devre dışı).
+// stealthProfile boş değilse, JA3 TLS fingerprint impersonation etkinleştirilir.
+// proxyPool varsa, tüm upstream bağlantıları SOCKS5 proxy pool üzerinden
+// round-robin yönlendirilir.
+func NewClient(baseURL string, httpClient *http.Client, runCache *cache.RunCache, stealthProfile string, proxyPool *stealth.ProxyPool) (*Client, error) {
 	parsedURL, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse freebuff base url: %w", err)
@@ -54,13 +66,51 @@ func NewClient(baseURL string, httpClient *http.Client) (*Client, error) {
 	}
 
 	if httpClient == nil {
-		httpClient = defaultHTTPClient()
+		httpClient = newHTTPClient(stealthProfile, proxyPool)
 	}
 
 	return &Client{
 		baseURL:    parsedURL,
 		httpClient: httpClient,
+		RunCache:   runCache,
 	}, nil
+}
+
+// newHTTPClient creates an HTTP client with optional JA3 stealth transport
+// and optional SOCKS5 proxy rotation.
+// If stealthProfile is non-empty, it creates a stealth client that impersonates
+// the specified browser's TLS fingerprint (chrome120, firefox120, safari17, random).
+// If proxyPool is non-nil, each outbound connection routes through a rotating
+// SOCKS5 proxy from the pool.
+func newHTTPClient(stealthProfile string, proxyPool *stealth.ProxyPool) *http.Client {
+	if stealthProfile == "" && proxyPool == nil {
+		return defaultHTTPClient()
+	}
+
+	var profile *stealth.Profile
+	switch stealthProfile {
+	case "chrome120":
+		profile = stealth.ProfileChrome120
+	case "firefox120":
+		profile = stealth.ProfileFirefox120
+	case "safari17":
+		profile = stealth.ProfileSafari17
+	case "random":
+		profile = stealth.ProfileRandom
+	default:
+		if proxyPool == nil {
+			return defaultHTTPClient()
+		}
+		// No stealth profile, but have a proxy pool — use default profile.
+		profile = stealth.DefaultProfile
+	}
+
+	return stealth.NewClient(stealth.ClientConfig{
+		Profile:         profile,
+		Timeout:         defaultResponseHeaderTimeout * 6, // 180s
+		SanitizeHeaders: true,
+		ProxyPool:       proxyPool,
+	})
 }
 
 // GetSession, mevcut Freebuff oturum durumunu getirir.

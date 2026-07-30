@@ -1,0 +1,46 @@
+version: "3.8"
+
+services:
+  freebuff-gateway:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    ports:
+      - "1455:1455"    # Gateway API (OpenAI-compatible)
+      - "9091:9091"    # Monitoring dashboard
+    environment:
+      - FREEBUFF_PROXY_ADDR=0.0.0.0:1455
+      - FREEBUFF_API_BASE_URL=https://www.codebuff.com
+      - FREEBUFF_MODEL=deepseek/deepseek-v4-pro
+      - STEALTH_ENABLED=false
+      - STEALTH_PROFILE=chrome120
+      - DASHBOARD_ENABLED=true
+      - DASHBOARD_ADDR=:9091
+      # PROXY_URL: SOCKS5 proxy list (Webshare format: host:port:user:pass)
+      # - PROXY_URL=${PROXY_URL:-}
+      # - PROXY_REFRESH_MINS=30
+      # - PROXY_STRICT_GEO=false
+    volumes:
+      # Mount credentials directory for OAuth login persistence
+      - freebuff-credentials:/home/freebuff/.config/manicode
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:1455/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # Optional: Prometheus monitoring stack
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   ports:
+  #     - "9090:9090"
+  #   volumes:
+  #     - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+  #   command:
+  #     - '--config.file=/etc/prometheus/prometheus.yml'
+  #   restart: unless-stopped
+
+volumes:
+  freebuff-credentials:
