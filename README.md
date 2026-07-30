@@ -1,5 +1,7 @@
 # freebuff-proxy
 
+[![CI](https://github.com/marktantongco/freebuff-proxy/actions/workflows/ci.yml/badge.svg)](https://github.com/marktantongco/freebuff-proxy/actions/workflows/ci.yml)
+
 `freebuff-proxy` is a small Go service that exposes a local OpenAI- and Anthropic-compatible HTTP surface in front of the Freebuff/Codebuff session infrastructure. It lets you sign in to a Freebuff account via CLI, securely use the credential stored in `credentials.json`, keep the session alive, and serve compatible endpoints at `/v1/models`, `/v1/chat/completions`, `/v1/messages`, and `/v1/messages/count_tokens`.
 
 Chat endpoints accept OpenAI or Anthropic-shaped requests, prepare the Freebuff session, start an agent run via `/api/v1/agent-runs` (like the Codebuff CLI flow), send the request to the verified upstream chat route with `codebuff_metadata`, and convert the response into `chat.completion`, OpenAI SSE chunk, or Anthropic Messages/SSE format according to the client contract.
