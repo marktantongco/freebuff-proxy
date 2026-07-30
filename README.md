@@ -49,7 +49,7 @@ go install ./cmd/freebuff-proxy
 | `FREEBUFF_PROXY_ADDR` | `127.0.0.1:1455` | HTTP listen address. Use `0.0.0.0:1455` to expose the port inside a container. |
 | `FREEBUFF_API_BASE_URL` | `https://www.codebuff.com` | Freebuff/Codebuff API base URL for login, logout, and session endpoints. |
 | `FREEBUFF_MODEL` | `deepseek/deepseek-v4-pro` | Model name listed in `/v1/models` and used by sample requests. |
-| `FREEBUFF_PROXY_API_KEY` | *(empty)* | When set, the proxy requires `Authorization: Bearer <value>` or `x-api-key: <value>` on every endpoint. Use as `api_key` for OpenAI-compatible clients or `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY` on the Anthropic/Claude Code side. |
+| `FREEBUFF_PROXY_API_KEY` | *(empty)* | When set, the proxy requires `Authorization: Bearer <value>` or `x-api-key: <value>` on every endpoint. Use as `api_key` for OpenAI-compatible clients or `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY` on the Anthropic/Claude Code side. Also read by the monitoring dashboard's `DefaultProxyTargets` to authenticate health probes against this proxy. Without this value, dashboard probes skip auth and may return 401. |
 | `FREEBUFF_CREDENTIALS_PATH` | `$HOME/.config/manicode/credentials.json` | Path to the credential file written after login and read during `serve`. |
 
 Example `.env`:
