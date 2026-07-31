@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -386,8 +387,15 @@ func TestManagerEnsureActiveRetriesStartedQueuedSessionWithDifferentModel(t *tes
 func TestManagerEnsureActiveQueuedSessionHonorsContextCancellation(t *testing.T) {
 	t.Parallel()
 
+	// Provide a generous queue of queued sessions. The poll loop can make one
+	// extra GetSession call when both the ctx deadline and the poll timer are
+	// ready at the same time (Go select picks randomly among ready cases, e.g.
+	// under -race scheduler load). A single-entry stub would then return its
+	// "unexpected GetSession call" error instead of context.DeadlineExceeded,
+	// making this test flaky. A long queue keeps the outcome deterministic
+	// while still asserting that the deadline is honored and no session starts.
 	client := &stubClient{
-		getSessions: []freebuff.Session{{Status: freebuff.SessionQueued, Position: 5}},
+		getSessions: slices.Repeat([]freebuff.Session{{Status: freebuff.SessionQueued, Position: 5}}, 1000),
 	}
 	manager := NewManager(stubStore{cred: credentials.Credential{AuthToken: "token-1"}}, client, "instance-1")
 	manager.PollInterval = 25 * time.Millisecond
