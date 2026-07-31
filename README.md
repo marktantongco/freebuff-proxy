@@ -53,6 +53,16 @@ go install ./cmd/freebuff-proxy
 | `FREEBUFF_MODEL` | `deepseek/deepseek-v4-pro` | Model name listed in `/v1/models` and used by sample requests. |
 | `FREEBUFF_PROXY_API_KEY` | *(empty)* | When set, the proxy requires `Authorization: Bearer <value>` or `x-api-key: <value>` on every endpoint. Use as `api_key` for OpenAI-compatible clients or `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY` on the Anthropic/Claude Code side. Also read by the monitoring dashboard's `DefaultProxyTargets` to authenticate health probes against this proxy. Without this value, dashboard probes skip auth and may return 401. |
 | `FREEBUFF_CREDENTIALS_PATH` | `$HOME/.config/manicode/credentials.json` | Path to the credential file written after login and read during `serve`. |
+| `AUTH_TOKENS` | *(empty)* | Comma-separated Freebuff auth tokens for multi-token session rotation (`token1,token2`). Token pool stats appear in `/healthz` and the dashboard. |
+| `STEALTH_ENABLED` | `false` | Set `true` to enable the uTLS JA3 TLS-fingerprint impersonation transport. |
+| `STEALTH_PROFILE` | `chrome120` | Browser fingerprint: `chrome120`, `firefox120`, `safari17`, or `random`. |
+| `PROXY_URL` | *(empty)* | SOCKS5 proxy URL or Webshare proxy-list URL for outbound proxy rotation. |
+| `PROXY_REFRESH_MINS` | `30` | How often the proxy pool refreshes (minutes). |
+| `PROXY_STRICT_GEO` | `false` | Fail-closed: only accept US proxies when `true`. |
+| `PROXY_GEO_VERIFY` | `false` | Geo-verify proxy countries via ip-api.com batch API when `true`. |
+| `DASHBOARD_ENABLED` | `true` | Set `false` to disable the built-in monitoring dashboard. |
+| `DASHBOARD_ADDR` | `:9091` | Dashboard listen address. **Use a unique port per proxy instance** (e.g. `:9091` for the `:1455` instance, `:9092` for the `:8080` instance) to avoid `address already in use` when running multiple instances. |
+| `DASHBOARD_PREFIX` | `/dashboard` | URL path prefix for the dashboard; API lives at `<prefix>/api/status`. |
 
 Example `.env`:
 
