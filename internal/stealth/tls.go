@@ -63,17 +63,17 @@ func (d *dialer) Dial(ctx context.Context, network, addr string) (net.Conn, erro
 				proxyEntry = nil
 				log.Printf("[stealth] create SOCKS5 dialer failed (%s:%d): %v — falling back to direct", entry.Host, entry.Port, dialErr)
 			} else {
-				// Prefer the context-aware dial so caller deadlines and the
-				// proxy entry's forward-dial timeout both apply.
-				if cd, ok := proxyDialer.(proxy.ContextDialer); ok {
-					rawConn, err = cd.DialContext(ctx, network, addr)
-				} else {
-					rawConn, err = proxyDialer.Dial(network, addr)
-				}
-				if err != nil {
-					d.proxyPool.MarkFailure(entry)
-					return nil, fmt.Errorf("stealth: SOCKS5 proxy dial to %s failed: %w", addr, err)
-				}
+				// Prefer the context-aware dial so caller deadlines and the					// proxy entry's forward-dial timeout both apply.
+					if cd, ok := proxyDialer.(proxy.ContextDialer); ok {
+						rawConn, err = cd.DialContext(ctx, network, addr)
+					} else {
+						rawConn, err = proxyDialer.Dial(network, addr)
+					}
+					if err != nil {
+						d.proxyPool.MarkFailure(entry)
+						proxyEntry = nil // failed proxy must not receive MarkSuccess below
+						log.Printf("[stealth] SOCKS5 proxy dial to %s failed: %v — falling back to direct", addr, err)
+					}
 			}
 		} else {
 			log.Printf("[stealth] proxy pool exhausted — falling back to direct for %s", addr)

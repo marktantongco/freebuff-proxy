@@ -458,7 +458,7 @@ func (c *Client) doJSONRequest(ctx context.Context, token string, path string, p
 	// of surfacing as user-visible timeouts. Never retried: 4xx/5xx responses
 	// (only transport errors), caller cancellation, or caller deadlines.
 	var lastErr error
-	for attempt := 0; attempt < maxTransportRetries; attempt++ {
+	for attempt := 0; attempt < maxTransportAttempts; attempt++ {
 		if attempt > 0 {
 			select {
 			case <-time.After(transportRetryDelay):

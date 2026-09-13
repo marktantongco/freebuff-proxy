@@ -274,13 +274,13 @@ func TestDialerWithSOCKS5ProxyFailure(t *testing.T) {
 	defer cancel()
 
 	conn, err := dialerFn(ctx, "tcp", tlsAddr)
-	if err == nil {
-		conn.Close()
-		t.Fatal("Dial with unreachable SOCKS5 proxy: expected error, got nil")
+	if err != nil {
+		t.Fatalf("Dial with unreachable SOCKS5 proxy: want direct-fallback success, got error: %v", err)
 	}
+	conn.Close()
 
-	// MarkFailure should have been called once. Since MaxFailures defaults to 3,
-	// the proxy is still Alive after a single failure.
+	// The failed proxy must still be marked: MarkFailure once for the dial
+	// failure. Since MaxFailures defaults to 3, it stays Alive after one.
 	stats := pool.Stats().(PoolStats)
 	if stats.Dead != 0 {
 		t.Errorf("Pool Stats().Dead = %d, want 0 (proxy still alive after 1 failure)", stats.Dead)
@@ -388,12 +388,13 @@ func TestDialerProxyRotationToleratesFailures(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// First dial should pick the bad proxy (round-robin starts at index 0).
+	// First dial picks the bad proxy (round-robin starts at index 0), fails,
+	// and falls back to direct — the request still succeeds via fallback.
 	conn, err := dialerFn(ctx, "tcp", tlsAddr)
-	if err == nil {
-		conn.Close()
-		t.Log("First dial (bad proxy) unexpectedly succeeded")
+	if err != nil {
+		t.Fatalf("First dial (bad proxy + direct fallback) failed: %v", err)
 	}
+	conn.Close()
 
 	// Second dial should pick the good proxy.
 	conn2, err := dialerFn(ctx, "tcp", tlsAddr)
