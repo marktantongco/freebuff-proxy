@@ -27,8 +27,9 @@ const (
 )
 
 // transport-level retry tuning for doJSONRequest (transport errors only).
+// maxTransportAttempts is the TOTAL number of sends (initial + 1 retry).
 const (
-	maxTransportRetries  = 2
+	maxTransportAttempts = 2
 	transportRetryDelay  = 200 * time.Millisecond
 )
 

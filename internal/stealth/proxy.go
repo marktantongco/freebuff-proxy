@@ -31,6 +31,16 @@ type ProxyEntry struct {
 	Alive    bool          `json:"alive"`
 }
 
+// MarshalJSON renders Latency in milliseconds so the JSON output honors
+// the latency_ms tag (time.Duration would otherwise serialize nanoseconds).
+func (p *ProxyEntry) MarshalJSON() ([]byte, error) {
+	type alias ProxyEntry
+	return json.Marshal(struct {
+		*alias
+		Latency int64 `json:"latency_ms"`
+	}{alias: (*alias)(p), Latency: p.Latency.Milliseconds()})
+}
+
 // URL returns the SOCKS5 URL for this proxy entry.
 func (p *ProxyEntry) URL() string {
 	if p.User != "" {
