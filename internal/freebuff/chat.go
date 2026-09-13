@@ -7,11 +7,15 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/ferdiunal/freebuff-proxy/internal/cache"
 	"github.com/ferdiunal/freebuff-proxy/internal/openai"
@@ -448,26 +452,74 @@ func (c *Client) doJSONRequest(ctx context.Context, token string, path string, p
 	}
 
 	requestURL := c.baseURL.ResolveReference(&url.URL{Path: path})
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL.String(), bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("build freebuff chat request: %w", err)
-	}
 
-	httpReq.Header.Set(headerAuthorization, "Bearer "+token)
-	httpReq.Header.Set("Content-Type", "application/json")
-	if accept != "" {
-		httpReq.Header.Set("Accept", accept)
-	}
+	// Transport-level retry: transient dial/TLS/reset blips (dead proxy pick,
+	// handshake storm leftovers) are retried once with a short backoff instead
+	// of surfacing as user-visible timeouts. Never retried: 4xx/5xx responses
+	// (only transport errors), caller cancellation, or caller deadlines.
+	var lastErr error
+	for attempt := 0; attempt < maxTransportRetries; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-time.After(transportRetryDelay):
+			case <-ctx.Done():
+				return nil, &APIError{
+					Code:    "upstream_chat_unavailable",
+					Message: "Freebuff sohbet upstream isteği iptal edildi",
+				}
+			}
+		}
 
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, &APIError{
-			Code:    "upstream_chat_unavailable",
-			Message: "Freebuff sohbet upstream isteği başarısız oldu",
+		// Fresh body reader per attempt: bytes.Reader is consumed by the first send.
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL.String(), bytes.NewReader(body))
+		if err != nil {
+			return nil, fmt.Errorf("build freebuff chat request: %w", err)
+		}
+
+		httpReq.Header.Set(headerAuthorization, "Bearer "+token)
+		httpReq.Header.Set("Content-Type", "application/json")
+		if accept != "" {
+			httpReq.Header.Set("Accept", accept)
+		}
+
+		resp, err := c.httpClient.Do(httpReq)
+		if err == nil {
+			return resp, nil
+		}
+
+		lastErr = err
+		if !isTransportError(err) || ctx.Err() != nil {
+			break
 		}
 	}
 
-	return resp, nil
+	_ = lastErr
+	return nil, &APIError{
+		Code:    "upstream_chat_unavailable",
+		Message: "Freebuff sohbet upstream isteği başarısız oldu",
+	}
+}
+
+// isTransportError reports whether err is a low-level transport failure worth
+// retrying (dial failures, TLS handshake errors, connection resets, EOF).
+// HTTP status errors never reach this path — only client.Do failures do.
+func isTransportError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Caller cancellation/deadline is never retryable.
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+	return errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.ECONNREFUSED) ||
+		errors.Is(err, syscall.EPIPE)
 }
 
 func failedChatStream(err error) (<-chan string, <-chan error) {

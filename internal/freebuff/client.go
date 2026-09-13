@@ -19,6 +19,17 @@ const (
 	headerInstanceID             = "x-freebuff-instance-id"
 	headerModel                  = "x-freebuff-model"
 	defaultResponseHeaderTimeout = 30 * time.Second
+
+	// defaultTLSHandshakeTimeout bounds the TLS handshake on the direct path.
+	// Also mirrors the intent of a per-attempt budget: dial + TLS + headers
+	// each get their own ceiling instead of one giant 180s client timeout.
+	defaultTLSHandshakeTimeout = 10 * time.Second
+)
+
+// transport-level retry tuning for doJSONRequest (transport errors only).
+const (
+	maxTransportRetries  = 2
+	transportRetryDelay  = 200 * time.Millisecond
 )
 
 // Client, Freebuff oturum ve sohbet uç noktalarına istek gönderen HTTP istemcisidir.
@@ -105,6 +116,8 @@ func newHTTPClient(stealthProfile string, proxyPool *stealth.ProxyPool) *http.Cl
 		profile = stealth.DefaultProfile
 	}
 
+	// Timeout stays generous (streaming bodies can be long-lived) but the
+	// transport-level budgets (dial/TLS/response-header) cap each attempt.
 	return stealth.NewClient(stealth.ClientConfig{
 		Profile:         profile,
 		Timeout:         defaultResponseHeaderTimeout * 6, // 180s
@@ -117,6 +130,11 @@ func newHTTPClient(stealthProfile string, proxyPool *stealth.ProxyPool) *http.Cl
 func defaultHTTPClient() *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.ResponseHeaderTimeout = defaultResponseHeaderTimeout
+	// Raise per-host idle pool above Go's default of 2 to prevent TLS
+	// handshake storms under concurrent load.
+	transport.MaxIdleConnsPerHost = 100
+	transport.TLSHandshakeTimeout = defaultTLSHandshakeTimeout
+	transport.ExpectContinueTimeout = 1 * time.Second
 
 	return &http.Client{Transport: transport}
 }

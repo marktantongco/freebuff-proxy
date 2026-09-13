@@ -100,11 +100,19 @@ func NewClient(cfg ClientConfig) *http.Client {
 	if cfg.RoundTripper != nil {
 		transport = cfg.RoundTripper
 	} else {
+		// MaxIdleConnsPerHost must be raised well above Go's default of 2:
+		// with only 2 cached idle conns per host, concurrent requests cause a
+		// TLS-handshake storm (observed 3.8s handshake outliers vs 0.3s p50).
+		// TLSHandshakeTimeout is not applied when DialTLSContext is set — the
+		// dialer bounds the utls handshake itself (tlsHandshakeTimeout).
 		transport = &http.Transport{
-			DialTLSContext:  Dialer(cfg.Profile, cfg.Resolver, WithProxyPool(cfg.ProxyPool)),
-			MaxIdleConns:    cfg.MaxIdleConns,
-			IdleConnTimeout: cfg.IdleConnTimeout,
-			ForceAttemptHTTP2: true,
+			DialTLSContext:         Dialer(cfg.Profile, cfg.Resolver, WithProxyPool(cfg.ProxyPool)),
+			MaxIdleConns:           cfg.MaxIdleConns,
+			MaxIdleConnsPerHost:    cfg.MaxIdleConns,
+			IdleConnTimeout:        cfg.IdleConnTimeout,
+			ResponseHeaderTimeout:  30 * time.Second,
+			ExpectContinueTimeout:  1 * time.Second,
+			ForceAttemptHTTP2:      true,
 		}
 	}
 

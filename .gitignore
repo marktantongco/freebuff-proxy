@@ -6,3 +6,5 @@
 *.log
 .env
 .DS_Store
+.env.bak-*
+*.bak-2*

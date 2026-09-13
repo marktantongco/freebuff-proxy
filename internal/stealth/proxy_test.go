@@ -91,7 +91,9 @@ func TestParseProxyList_EmptyLinesAndComments(t *testing.T) {
 }
 
 func TestParseProxyList_LessThanFourParts(t *testing.T) {
-	data := "192.168.1.1:1080:user1\n192.168.1.1:1080\ninvalid"
+	// 3-field lines are not a supported format (neither Webshare nor
+	// host:port) and are skipped.
+	data := "192.168.1.1:1080:user1\ninvalid"
 	entries := parseProxyList(data)
 
 	if len(entries) != 0 {
@@ -273,7 +275,7 @@ func TestNext_SkipsDeadProxies(t *testing.T) {
 	}
 }
 
-func TestNext_FallsBackToFirstWhenAllDead(t *testing.T) {
+func TestNext_FailsClosedWhenAllDead(t *testing.T) {
 	p := NewProxyPool(ProxyPoolConfig{})
 	p.proxies = []*ProxyEntry{
 		{Host: "1.1.1.1", Port: 1080, Alive: false, Failures: 4},
@@ -281,11 +283,8 @@ func TestNext_FallsBackToFirstWhenAllDead(t *testing.T) {
 	}
 
 	got := p.Next()
-	if got == nil {
-		t.Fatal("Next() = nil, want fallback to first proxy")
-	}
-	if got.Host != "1.1.1.1" {
-		t.Errorf("Next() = %s, want 1.1.1.1 (fallback to first dead)", got.Host)
+	if got != nil {
+		t.Errorf("Next() = %s, want nil (fail-closed so dialer falls back to direct)", got.Host)
 	}
 }
 
@@ -805,26 +804,83 @@ func TestNewProxyPool_NegativeMaxFailuresDefaults(t *testing.T) {
 
 // ── Edge Cases Tests ───────────────────────────────────────────────────────
 
-func TestNext_WhenOnlyDeadProxiesWithIndexWrap(t *testing.T) {
-	// Verify Next() correctly wraps the current index pointer even when
-	// all proxies are dead.
+func TestNext_WhenOnlyDeadProxiesFailsClosed(t *testing.T) {
+	// With all proxies dead, Next() must return nil (fail-closed) so the
+	// stealth dialer falls back to direct instead of hanging on a dead proxy.
 	p := NewProxyPool(ProxyPoolConfig{})
 	p.proxies = []*ProxyEntry{
 		{Host: "1.1.1.1", Port: 1080, Alive: false, Failures: 5},
 		{Host: "2.2.2.2", Port: 1081, Alive: false, Failures: 5},
 	}
 
-	// First call: should return first proxy as fallback, advance current to 1.
 	got1 := p.Next()
-	if got1 == nil || got1.Host != "1.1.1.1" {
-		t.Errorf("Next() #1 = %v, want 1.1.1.1 fallback", got1)
+	if got1 != nil {
+		t.Errorf("Next() #1 = %v, want nil (fail-closed)", got1)
 	}
-	// current index is now 1 (wrapped from 0 after full scan).
-
-	// Second call: should scan starting at index 1, find all dead,
-	// fallback to index 0.
 	got2 := p.Next()
-	if got2 == nil || got2.Host != "1.1.1.1" {
-		t.Errorf("Next() #2 = %v, want 1.1.1.1 fallback", got2)
+	if got2 != nil {
+		t.Errorf("Next() #2 = %v, want nil (fail-closed)", got2)
+	}
+}
+
+func TestParseProxyList_PlainHostPort(t *testing.T) {
+	// Public-list format used by monosans/proxy-list and TheSpeedX/SOCKS-List.
+	data := "1.2.3.4:1080\n5.6.7.8:5678\n# comment\n\n"
+	entries := parseProxyList(data)
+
+	if len(entries) != 2 {
+		t.Fatalf("parseProxyList() returned %d entries, want 2", len(entries))
+	}
+	if entries[0].Host != "1.2.3.4" || entries[0].Port != 1080 {
+		t.Errorf("Entry 0 = %s:%d, want 1.2.3.4:1080", entries[0].Host, entries[0].Port)
+	}
+	if entries[1].Host != "5.6.7.8" || entries[1].Port != 5678 {
+		t.Errorf("Entry 1 = %s:%d, want 5.6.7.8:5678", entries[1].Host, entries[1].Port)
+	}
+	if entries[0].User != "" || entries[1].User != "" {
+		t.Errorf("Plain entries should have no credentials, got %q / %q", entries[0].User, entries[1].User)
+	}
+}
+
+func TestParseProxyList_SchemePrefixed(t *testing.T) {
+	data := "socks5://1.2.3.4:1080\nhttp://5.6.7.8:8080\nsocks4://9.9.9.9:1080"
+	entries := parseProxyList(data)
+
+	// Only the socks5:// entry is kept for this pool.
+	if len(entries) != 1 {
+		t.Fatalf("parseProxyList() returned %d entries, want 1 (socks5 only)", len(entries))
+	}
+	if entries[0].Host != "1.2.3.4" || entries[0].Port != 1080 {
+		t.Errorf("Entry 0 = %s:%d, want 1.2.3.4:1080", entries[0].Host, entries[0].Port)
+	}
+}
+
+func TestRefresh_LatencySorted(t *testing.T) {
+	// All proxies point at the same reachable listener; latency is recorded
+	// from health checks and the pool is sorted fastest-first.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to start test listener: %v", err)
+	}
+	defer ln.Close()
+	host, portStr, _ := net.SplitHostPort(ln.Addr().String())
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "%s:%s\n", host, portStr)
+	}))
+	defer ts.Close()
+
+	p := NewProxyPool(ProxyPoolConfig{RefreshURL: ts.URL})
+	if err := p.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() unexpected error: %v", err)
+	}
+
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if len(p.proxies) != 1 {
+		t.Fatalf("pool size = %d, want 1", len(p.proxies))
+	}
+	if p.proxies[0].Latency <= 0 {
+		t.Errorf("Latency = %v, want > 0 after health check", p.proxies[0].Latency)
 	}
 }

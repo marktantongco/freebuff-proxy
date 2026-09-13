@@ -293,8 +293,8 @@ func TestDialerWithSOCKS5ProxyFailure(t *testing.T) {
 	}
 }
 
-// TestDialerWithEmptyProxyPool verifies the dialer returns an error when the
-// proxy pool is configured but empty.
+// TestDialerWithEmptyProxyPool verifies the dialer falls back to a direct
+// connection when the proxy pool is configured but empty (fail-open to direct).
 func TestDialerWithEmptyProxyPool(t *testing.T) {
 	tlsAddr, closeTLS := testMultiAcceptTLSServer(t)
 	defer closeTLS()
@@ -302,19 +302,17 @@ func TestDialerWithEmptyProxyPool(t *testing.T) {
 	pool := NewProxyPool(ProxyPoolConfig{})
 	// Leave pool empty.
 
-	dialerFn := Dialer(ProfileChrome120, nil, WithProxyPool(pool))
+	dialerFn := Dialer(ProfileChrome120, nil, WithProxyPool(pool),
+		WithInsecureSkipVerify()) // direct fallback hits the test's self-signed TLS server
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	conn, err := dialerFn(ctx, "tcp", tlsAddr)
-	if err == nil {
-		conn.Close()
-		t.Fatal("Dial with empty proxy pool: expected error, got nil")
+	if err != nil {
+		t.Fatalf("Dial with empty proxy pool: want direct fallback success, got error: %v", err)
 	}
-	if err.Error() != "stealth: no SOCKS5 proxies available in pool" {
-		t.Errorf("Dial error = %q, want %q", err.Error(), "stealth: no SOCKS5 proxies available in pool")
-	}
+	conn.Close()
 }
 
 // TestDialerMultipleProxyRoundRobin verifies that multiple dials cycle through
