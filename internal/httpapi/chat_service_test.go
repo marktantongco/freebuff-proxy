@@ -114,6 +114,34 @@ func TestFreebuffChatServiceCompleteNormalizesUpstreamAPIError(t *testing.T) {
 	assertEvents(t, &events, []string{"ensure:deepseek/deepseek-v4-pro", "load", "complete"})
 }
 
+func TestFreebuffChatServiceCompletePassesThroughFreeModeInvalidAgentModel(t *testing.T) {
+	// Upstream rejects free-mode (agent, model) pairs — e.g. z-ai/glm-5.3-flash
+	// has no free-mode agent pairing — with code free_mode_invalid_agent_model.
+	// The service must pass the true code through (no retry, no rebranding to
+	// freebuff_auth_failed); it is a permanent request problem, not transient.
+	upstreamErr := &freebuff.APIError{
+		StatusCode: http.StatusForbidden,
+		Code:       "free_mode_invalid_agent_model",
+		Message:    "Free mode yalnızca belirli agent ve model kombinasyonlarında kullanılabilir",
+	}
+	events := []string{}
+	store := &recordingCredentialStore{credential: credentials.Credential{AuthToken: "freebuff-token"}, events: &events}
+	sessions := &recordingSessionEnsurer{session: freebuff.Session{Status: freebuff.SessionActive}, events: &events}
+	upstream := &recordingUpstreamChatClient{completeErr: upstreamErr, events: &events}
+	service := FreebuffChatService{Store: store, Sessions: sessions, Upstream: upstream}
+
+	_, err := service.Complete(context.Background(), richChatRequest())
+	assertServiceError(t, err, http.StatusForbidden, "free_mode_invalid_agent_model")
+	assertServiceErrorMessage(t, err, "Free mode yalnızca belirli agent ve model kombinasyonlarında kullanılabilir")
+	assertEvents(t, &events, []string{"ensure:deepseek/deepseek-v4-pro", "load", "complete"})
+	if upstream.completeCount != 1 {
+		t.Fatalf("completeCount = %d, beklenen 1 (geçici hata olmadığından retry yok)", upstream.completeCount)
+	}
+	if store.loadCount != 1 {
+		t.Fatalf("loadCount = %d, beklenen 1", store.loadCount)
+	}
+}
+
 func TestFreebuffChatServiceCompleteSanitizesEnsureActiveStatusError(t *testing.T) {
 	upstreamErr := &session.StatusError{
 		Status:  freebuff.SessionRateLimited,
