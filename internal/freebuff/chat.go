@@ -40,9 +40,13 @@ const (
 	chatErrorStageChat     = "chat"
 )
 
+// Static snapshot of upstream's free-mode (agent, model) pairings. The
+// trefeon fork resolves these from a live registry (dots→dashes naming, e.g.
+// z-ai/glm-5.3-flash → base2-free-glm-5-3-flash); until this proxy grows
+// one, keep this map in sync with upstream's free tier. Retired models
+// (minimax-m2.7, kimi-k2.6) were dropped upstream 2026-09.
 var freebuffAgentIDsByModel = map[string]string{
-	"minimax/minimax-m2.7":       "base2-free",
-	"moonshotai/kimi-k2.6":       "base2-free-kimi",
+	"z-ai/glm-5.3-flash":         "base2-free-glm-5-3-flash",
 	"deepseek/deepseek-v4-pro":   "base2-free-deepseek",
 	"deepseek/deepseek-v4-flash": "base2-free-deepseek-flash",
 	"freebuff-chat-verified":     "base2-free",
