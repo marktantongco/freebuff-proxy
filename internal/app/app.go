@@ -95,6 +95,9 @@ func NewApp(cfg config.Config) (*fiber.App, error) {
 	// ── Session Manager + Chat Service ─────────────────────────────────────
 	manager := session.NewManager(store, client, defaultInstanceID)
 
+	// ── Agent Registry (live model→agent pairings from upstream TS constants) ─
+	freebuff.StartAgentRegistry(context.Background())
+
 	// ── Token Pool (multi-token rotation) ───────────────────────────────────
 	// Reads AUTH_TOKENS from config. Exposes LenLocked() in /healthz so
 	// operators can see when tokens are stuck on unexpected models.

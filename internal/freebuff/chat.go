@@ -468,6 +468,11 @@ func clientIDForRun(runID string) string {
 }
 
 func agentIDForModel(model string) string {
+	// Live registry first (refreshed from upstream's TS constants every 6h);
+	// static snapshot as offline fallback; defaultFreeAgentID last.
+	if agentID, ok := liveAgentRegistry.get(CanonicalModelName(model)); ok {
+		return agentID
+	}
 	if agentID, ok := freebuffAgentIDsByModel[CanonicalModelName(model)]; ok {
 		return agentID
 	}
