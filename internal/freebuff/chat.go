@@ -644,12 +644,13 @@ func chatStatusError(resp *http.Response, stage string) *APIError {
 }
 
 var safeUpstreamErrorMessages = map[string]string{
-	"freebuff_update_required": "Freebuff oturum bilgisi eksik veya eski",
-	"session_expired":          "Freebuff oturumu süresi doldu",
-	"session_model_mismatch":   "Freebuff oturum modeli istek modeliyle eşleşmiyor",
-	"session_superseded":       "Freebuff oturumu başka bir oturum tarafından değiştirildi",
-	"waiting_room_queued":      "Freebuff oturumu hâlâ kuyrukta",
-	"waiting_room_required":    "Freebuff bekleme odası oturumu gerekli",
+	"freebuff_update_required":       "Freebuff oturum bilgisi eksik veya eski",
+	"session_expired":                "Freebuff oturumu süresi doldu",
+	"session_model_mismatch":         "Freebuff oturum modeli istek modeliyle eşleşmiyor",
+	"session_superseded":             "Freebuff oturumu başka bir oturum tarafından değiştirildi",
+	"waiting_room_queued":            "Freebuff oturumu hâlâ kuyrukta",
+	"waiting_room_required":          "Freebuff bekleme odası oturumu gerekli",
+	"free_mode_invalid_agent_model": "Free mode yalnızca belirli agent ve model kombinasyonlarında kullanılabilir",
 }
 
 func safeUpstreamErrorCode(body io.Reader) (string, bool) {
@@ -737,6 +738,8 @@ func chatStreamEventError(code string) *APIError {
 	switch code {
 	case "freebuff_auth_failed":
 		return &APIError{StatusCode: http.StatusUnauthorized, Code: "freebuff_auth_failed", Message: "Freebuff sohbet yetkilendirmesi başarısız oldu"}
+	case "free_mode_invalid_agent_model":
+		return &APIError{StatusCode: http.StatusForbidden, Code: "free_mode_invalid_agent_model", Message: "Free mode yalnızca belirli agent ve model kombinasyonlarında kullanılabilir"}
 	case "freebuff_rate_limited":
 		return &APIError{StatusCode: http.StatusTooManyRequests, Code: "freebuff_rate_limited", Message: "Freebuff sohbet limiti aşıldı"}
 	case "upstream_chat_unavailable":
