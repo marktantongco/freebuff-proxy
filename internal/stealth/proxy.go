@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -42,11 +43,12 @@ func (p *ProxyEntry) MarshalJSON() ([]byte, error) {
 }
 
 // URL returns the SOCKS5 URL for this proxy entry.
+// IPv6 hosts are bracketed with net.JoinHostPort so the URL stays parseable.
 func (p *ProxyEntry) URL() string {
 	if p.User != "" {
-		return fmt.Sprintf("socks5://%s:%s@%s:%d", p.User, p.Pass, p.Host, p.Port)
+		return fmt.Sprintf("socks5://%s:%s@%s", p.User, p.Pass, net.JoinHostPort(p.Host, strconv.Itoa(p.Port)))
 	}
-	return fmt.Sprintf("socks5://%s:%d", p.Host, p.Port)
+	return "socks5://" + net.JoinHostPort(p.Host, strconv.Itoa(p.Port))
 }
 
 // Dialer returns a proxy.Dialer for this entry.
@@ -437,6 +439,7 @@ func (p *ProxyPool) healthCheck(entry *ProxyEntry) bool {
 //	Webshare:        host:port:user:pass or host:port:user:pass:country
 //	Public lists:    host:port            (monosans/proxy-list, TheSpeedX/SOCKS-List)
 //	Scheme-prefixed: socks5://host:port   (socks4://, http:// are skipped)
+//	Bracketed IPv6:  [2001:db8::1]:1080   (plain or scheme-prefixed)
 //
 // Lines starting with # are comments.
 func parseProxyList(data string) []*ProxyEntry {
@@ -460,6 +463,19 @@ func parseProxyList(data string) []*ProxyEntry {
 		}
 		line = strings.TrimSpace(line)
 		if line == "" {
+			continue
+		}
+		// Bracketed IPv6 endpoint ([2001:db8::1]:1080) would mis-split on
+		// colons below; net.SplitHostPort keeps host bracketed and port intact.
+		if strings.HasPrefix(line, "[") {
+			host, portStr, err := net.SplitHostPort(line)
+			if err != nil {
+				continue
+			}
+			entries = append(entries, &ProxyEntry{
+				Host: host,
+				Port: parseInt(portStr),
+			})
 			continue
 		}
 		parts := strings.Split(line, ":")

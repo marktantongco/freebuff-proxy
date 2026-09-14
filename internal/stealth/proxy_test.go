@@ -32,7 +32,7 @@ func TestProxyEntryURL_WithoutAuth(t *testing.T) {
 
 func TestProxyEntryURL_IPv6(t *testing.T) {
 	e := &ProxyEntry{Host: "::1", Port: 1080}
-	want := "socks5://::1:1080"
+	want := "socks5://[::1]:1080" // net.JoinHostPort brackets IPv6
 	if got := e.URL(); got != want {
 		t.Errorf("URL() for IPv6 = %q, want %q", got, want)
 	}
@@ -98,6 +98,27 @@ func TestParseProxyList_LessThanFourParts(t *testing.T) {
 
 	if len(entries) != 0 {
 		t.Errorf("parseProxyList() returned %d entries, want 0", len(entries))
+	}
+}
+
+func TestParseProxyList_BracketedIPv6(t *testing.T) {
+	entries := parseProxyList("[2001:db8::1]:1080\nsocks5://[::1]:9050")
+
+	if len(entries) != 2 {
+		t.Fatalf("parseProxyList() returned %d entries, want 2", len(entries))
+	}
+	if entries[0].Host != "2001:db8::1" || entries[0].Port != 1080 {
+		t.Errorf("entry[0] = %s:%d, want 2001:db8::1:1080", entries[0].Host, entries[0].Port)
+	}
+	if entries[1].Host != "::1" || entries[1].Port != 9050 {
+		t.Errorf("entry[1] = %s:%d, want [::1]:9050", entries[1].Host, entries[1].Port)
+	}
+}
+
+func TestParseProxyList_BracketedIPv6Malformed(t *testing.T) {
+	// A bracketed address with no port fails net.SplitHostPort and is skipped.
+	if got := parseProxyList("[2001:db8::1]"); len(got) != 0 {
+		t.Errorf("parseProxyList() returned %d entries, want 0", len(got))
 	}
 }
 
