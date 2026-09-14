@@ -4,12 +4,12 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/url"
@@ -20,6 +20,16 @@ import (
 	"github.com/ferdiunal/freebuff-proxy/internal/cache"
 	"github.com/ferdiunal/freebuff-proxy/internal/openai"
 )
+
+// cliUserAgent is the User-Agent the official Freebuff CLI pins on chat
+// calls alone (ai-sdk openai-compatible client). Upstream's free-mode gate
+// 403s chat requests that do not carry it with free_mode_cli_required.
+const cliUserAgent = "ai-sdk/openai-compatible/1.0.0/codebuff"
+
+// cliSystemMarker is the canonical identity prefix the CLI puts at the root
+// of every free-mode system prompt. Upstream requires the first system
+// message to OPEN with it (position 0, after whitespace trim only).
+const cliSystemMarker = "You are Buffy, the strategic coding assistant. You are the AI agent behind the product, Freebuff, a tool where users can chat with you to code with AI for free."
 
 const (
 	chatEndpointPath       = "/api/v1/chat/completions"
@@ -394,9 +404,26 @@ func CanonicalModelName(model string) string {
 }
 
 func buildUpstreamChatRequest(req openai.ChatCompletionRequest, stream bool, runID string, activeSession Session) (upstreamChatRequest, error) {
-	clientID, err := newClientSessionID()
-	if err != nil {
-		return upstreamChatRequest{}, err
+	clientID := clientIDForRun(runID)
+
+	// Free-mode gate: the first system message must OPEN with the CLI's
+	// canonical identity marker (position 0). Prepend only when no system
+	// message already opens with it — never clobber a canonical prompt.
+	alreadyMarked := false
+	for _, m := range req.Messages {
+		if m.Role != "system" {
+			continue
+		}
+		if strings.HasPrefix(strings.TrimLeft(m.Content, " \t\n\r"), cliSystemMarker) {
+			alreadyMarked = true
+			break
+		}
+	}
+	if !alreadyMarked {
+		msgs := make([]openai.ChatMessage, 0, len(req.Messages)+1)
+		msgs = append(msgs, openai.ChatMessage{Role: "system", Content: cliSystemMarker})
+		msgs = append(msgs, req.Messages...)
+		req.Messages = msgs
 	}
 
 	return upstreamChatRequest{
@@ -416,13 +443,24 @@ func buildUpstreamChatRequest(req openai.ChatCompletionRequest, stream bool, run
 	}, nil
 }
 
-func newClientSessionID() (string, error) {
-	var randomBytes [16]byte
-	if _, err := rand.Read(randomBytes[:]); err != nil {
-		return "", &APIError{Code: "upstream_chat_error", Message: "Freebuff sohbet isteği hazırlanamadı"}
+// clientIDForRun derives the per-run client session id deterministically from
+// the run_id, in the SDK-faithful 13-char base36 shape (the CLI's
+// Math.random().toString(36).substring(2,15) equivalent). Deriving — not
+// drawing fresh per call — is what keeps the CLI invariant: one run_id always
+// pairs with ONE client_id, because startAgentRun caches run_id per
+// token+agent and a fresh draw per call would fan one run out across N ids,
+// which upstream refuses as free_mode_run_fanout. Other shapes —
+// "freebuff-proxy-<hex>", sess:/run: prefixes, bare hex — are what upstream
+// fingerprints as a proxy (#103) and rejects.
+func clientIDForRun(runID string) string {
+	sum := sha256.Sum256([]byte(runID))
+	n := new(big.Int).SetBytes(sum[:])
+	mod := new(big.Int).Exp(big.NewInt(36), big.NewInt(13), nil)
+	id := n.Mod(n, mod).Text(36)
+	for len(id) < 13 {
+		id = "0" + id
 	}
-
-	return "freebuff-proxy-" + hex.EncodeToString(randomBytes[:]), nil
+	return id
 }
 
 func agentIDForModel(model string) string {
@@ -478,6 +516,11 @@ func (c *Client) doJSONRequest(ctx context.Context, token string, path string, p
 
 		httpReq.Header.Set(headerAuthorization, "Bearer "+token)
 		httpReq.Header.Set("Content-Type", "application/json")
+		if path == chatEndpointPath {
+			// The CLI pins the ai-sdk UA on chat calls alone; every other
+			// endpoint keeps Go's default (or the caller's) UA.
+			httpReq.Header.Set("User-Agent", cliUserAgent)
+		}
 		if accept != "" {
 			httpReq.Header.Set("Accept", accept)
 		}

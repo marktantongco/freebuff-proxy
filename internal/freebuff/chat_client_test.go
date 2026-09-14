@@ -517,8 +517,16 @@ func assertVerifiedUpstreamChatRequest(t *testing.T, req *http.Request, want ope
 		t.Fatalf("chat request JSON çözülemedi: %v", err)
 	}
 
-	if !reflect.DeepEqual(gotBody.Messages, want.Messages) {
-		t.Fatalf("messages = %#v, beklenen %#v", gotBody.Messages, want.Messages)
+	// Free-mode gate: the client prepends the CLI identity marker unless the
+	// request already opens with it, and pins the ai-sdk UA on chat alone.
+	wantMessages := make([]openai.ChatMessage, 0, len(want.Messages)+1)
+	wantMessages = append(wantMessages, openai.ChatMessage{Role: "system", Content: cliSystemMarker})
+	wantMessages = append(wantMessages, want.Messages...)
+	if !reflect.DeepEqual(gotBody.Messages, wantMessages) {
+		t.Fatalf("messages = %#v, beklenen %#v", gotBody.Messages, wantMessages)
+	}
+	if got := req.Header.Get("User-Agent"); got != cliUserAgent {
+		t.Fatalf("User-Agent = %q, beklenen %q", got, cliUserAgent)
 	}
 	if gotBody.Model != want.Model {
 		t.Fatalf("model = %q, beklenen %q", gotBody.Model, want.Model)
