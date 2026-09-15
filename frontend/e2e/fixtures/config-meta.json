@@ -737,6 +737,17 @@
     "description": "Max additional attempts after a transient transport failure (never retries 429/403/401; 0 disables)."
   },
   {
+    "key": "UNFIT_EGRESS",
+    "group": "upstream",
+    "kind": "text",
+    "default": "direct",
+    "restart_only": true,
+    "secret": false,
+    "essential": false,
+    "hidden": true,
+    "description": "Egress identity recorded in the (egress, model) unfit registry; \"direct\" by default. When proxy egresses are re-introduced, give each egress its own label so a limited_ip refusal on one path never marks models unfit on another."
+  },
+  {
     "key": "UPSTREAM_BASE_URL",
     "group": "upstream",
     "kind": "text",

@@ -387,6 +387,44 @@ func TestDotenvFullKeySetEnvWins(t *testing.T) {
 	}
 }
 
+// TestUnfitEgressKnob pins the UNFIT_EGRESS semantics: default "direct",
+// explicit value honored (trimmed), blank falls back to "direct" (Load
+// never emits an empty egress, so the unfit registry is always keyed on a
+// non-empty identity).
+func TestUnfitEgressKnob(t *testing.T) {
+	clearEnv(t)
+
+	// Default: unset everywhere → "direct".
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.UnfitEgress != "direct" {
+		t.Errorf("UnfitEgress = %q, want \"direct\" (default)", cfg.UnfitEgress)
+	}
+
+	// Explicit env value wins and is trimmed.
+	t.Setenv("UNFIT_EGRESS", "  warp-eu-1  ")
+	cfg, err = Load("")
+	if err != nil {
+		t.Fatalf("Load (env): %v", err)
+	}
+	if cfg.UnfitEgress != "warp-eu-1" {
+		t.Errorf("UnfitEgress = %q, want \"warp-eu-1\" (env value trimmed)", cfg.UnfitEgress)
+	}
+
+	// Blank explicit value falls back to "direct" (overridden default,
+	// not the zero value).
+	t.Setenv("UNFIT_EGRESS", "")
+	cfg, err = Load("")
+	if err != nil {
+		t.Fatalf("Load (blank): %v", err)
+	}
+	if cfg.UnfitEgress != "direct" {
+		t.Errorf("UnfitEgress = %q, want \"direct\" (blank falls back)", cfg.UnfitEgress)
+	}
+}
+
 func TestReadDotenvQuotingAndComments(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".env")
 	content := strings.Join([]string{

@@ -97,6 +97,12 @@ type Config struct {
 	ModelsAllow       []string
 	CORSAllowedOrigin string        // Access-Control-Allow-Origin for /v1/* responses (CORS_ALLOWED_ORIGIN; default "*")
 	RequestJitter     time.Duration // random delay range [0, RequestJitter) before upstream chat calls
+	// UnfitEgress is the egress identity recorded in the pool's (egress,
+	// model) unfit registry (UNFIT_EGRESS; default "direct"). With a single
+	// direct egress it changes nothing; when proxy egresses are re-introduced,
+	// each egress labels its own unfit marks so a limited_ip refusal on one
+	// path never poisons models on another.
+	UnfitEgress       string        // egress identity for the unfit registry (default "direct")
 	CLIVersion        string        // upstream CLI version string (default: 0.10.7)
 	TokenRotation     string        // "drain" (default) | "round_robin" | "least_used" | "random"
 	RateLimitFailover bool          // true = automatically lease another token when an in-flight request encounters 429 rate limit (RATE_LIMIT_FAILOVER; default true)
@@ -437,6 +443,17 @@ func splitList(value string) []string {
 		return r == ',' || r == '\n' || r == '\r'
 	})
 	return compactStrings(fields)
+}
+
+// egressOrDefault normalizes the UNFIT_EGRESS raw value: unset/blank falls
+// back to "direct", and any explicit value is trimmed. This keeps the
+// unfit registry keyed on a non-empty egress even when an operator clears
+// the field in the dashboard.
+func egressOrDefault(value string) string {
+	if v := strings.TrimSpace(value); v != "" {
+		return v
+	}
+	return "direct"
 }
 func parseMap(value string) map[string]string {
 	out := make(map[string]string)

@@ -10,11 +10,21 @@ import (
 // an upstream limited_ip refusal. A var (not const) so tests can shrink it.
 var modelUnfitTTL = 5 * time.Minute
 
-// unfitEgress is the pool's only egress: the direct connection (SOCKS5/HTTP
-// proxy support was removed — the pool has exactly one egress). The registry
-// still keys (egress, model) so a proxy re-introduction can key per egress
-// without changing the registry shape.
-const unfitEgress = "direct"
+// defaultEgress is the fallback egress identity when the config does not
+// name one: the direct connection (SOCKS5/HTTP proxy support was removed —
+// the pool has exactly one egress). UNFIT_EGRESS overrides this so a proxy
+// re-introduction can key per egress without changing the registry shape.
+const defaultEgress = "direct"
+
+// egress returns the pool's configured egress identity (UNFIT_EGRESS;
+// "direct" when unset). Loaded per call so a dashboard config swap is
+// picked up without a restart — consistent with every other cfg reader.
+func (p *Pool) egress() string {
+	if v := p.cfg.Load().UnfitEgress; v != "" {
+		return v
+	}
+	return defaultEgress
+}
 
 // unfitKey is one (egress, model) pair in the model-unfit registry.
 type unfitKey struct {
@@ -44,19 +54,21 @@ func (p *Pool) MarkModelUnfit(model string, lie *upstream.LimitedIpError) {
 		cp.Model = model
 		stored = &cp
 	}
+	eg := p.egress()
 	now := time.Now()
 	p.unfitMu.Lock()
 	defer p.unfitMu.Unlock()
-	p.unfit[unfitKey{egress: unfitEgress, model: model}] = unfitEntry{created: now, until: now.Add(modelUnfitTTL), err: stored}
-	p.logger.Debug("pool: model marked unfit on egress", "egress", unfitEgress, "model", model, "until", now.Add(modelUnfitTTL).Format(time.RFC3339))
+	p.unfit[unfitKey{egress: eg, model: model}] = unfitEntry{created: now, until: now.Add(modelUnfitTTL), err: stored}
+	p.logger.Debug("pool: model marked unfit on egress", "egress", eg, "model", model, "until", now.Add(modelUnfitTTL).Format(time.RFC3339))
 }
 
 // ClearModelUnfit removes the unfit mark for model unconditionally.
 func (p *Pool) ClearModelUnfit(model string) {
+	eg := p.egress()
 	p.unfitMu.Lock()
 	defer p.unfitMu.Unlock()
-	delete(p.unfit, unfitKey{egress: unfitEgress, model: model})
-	p.logger.Debug("pool: model unfit mark cleared", "egress", unfitEgress, "model", model)
+	delete(p.unfit, unfitKey{egress: eg, model: model})
+	p.logger.Debug("pool: model unfit mark cleared", "egress", eg, "model", model)
 }
 
 // ClearModelUnfitBefore removes the unfit mark for model only when it was
@@ -67,9 +79,10 @@ func (p *Pool) ClearModelUnfit(model string) {
 // program order guarantees the mark ran first) and still succeeding proves
 // the pair is servable again. Younger marks are left for the 5-min TTL.
 func (p *Pool) ClearModelUnfitBefore(model string, before time.Time) {
+	eg := p.egress()
 	p.unfitMu.Lock()
 	defer p.unfitMu.Unlock()
-	key := unfitKey{egress: unfitEgress, model: model}
+	key := unfitKey{egress: eg, model: model}
 	if e, ok := p.unfit[key]; ok && !e.created.After(before) {
 		delete(p.unfit, key)
 	}
@@ -81,7 +94,7 @@ func (p *Pool) ClearModelUnfitBefore(model string, before time.Time) {
 // error is returned as a COPY: callers must never mutate registry state
 // (SEC-1) — the refusal window they surface is e.until, not the error's.
 func (p *Pool) ModelUnfit(model string) (time.Time, *upstream.LimitedIpError) {
-	key := unfitKey{egress: unfitEgress, model: model}
+	key := unfitKey{egress: p.egress(), model: model}
 	now := time.Now()
 	p.unfitMu.Lock()
 	defer p.unfitMu.Unlock()

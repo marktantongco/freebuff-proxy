@@ -59,6 +59,7 @@ type rawConfig struct {
 	ModelsAllow              modelsAllowList         `json:"MODELS_ALLOW"`
 	CORSAllowedOrigin        string                  `json:"CORS_ALLOWED_ORIGIN"`
 	RequestJitter            string                  `json:"REQUEST_JITTER"`
+	UnfitEgress              string                  `json:"UNFIT_EGRESS"`
 	CLIVersion               string                  `json:"CLI_VERSION"`
 	ModelAliases             string                  `json:"MODEL_ALIASES"`
 	TransientRetries         *int                    `json:"TRANSIENT_RETRIES"`
@@ -180,6 +181,7 @@ func defaultRawConfig() rawConfig {
 		LogTableRetention:        "168h",      // 7d storage retention for log_entries and request_records
 		CORSAllowedOrigin:        "*",         // browser clients reach /v1/* cross-origin by default
 		RequestJitter:            "",          // "" = disabled (unset → SAFE_MODE preset may fill)
+		UnfitEgress:              "",          // "" = Load fills "direct" (egress identity for the (egress, model) unfit registry)
 		CLIVersion:               "0.10.7",
 		TransientRetries:         nil,  // nil = 1 (one retry after a transient transport failure; 0 disables)
 		SessionPersist:           true, // session persistence on by default: restart resumes unexpired sessions

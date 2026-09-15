@@ -87,6 +87,8 @@ func renderKey(c *Config, key string) (val string, valueIsSecret bool) {
 		return strconv.FormatBool(c.SafeMode), false
 	case "REQUEST_JITTER":
 		return c.RequestJitter.String(), false
+	case "UNFIT_EGRESS":
+		return c.UnfitEgress, false
 	case "CLI_VERSION":
 		return c.CLIVersion, false
 	case "MODEL_ALIASES":

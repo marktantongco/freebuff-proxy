@@ -104,6 +104,7 @@ func LoadOpts(configPath string, opts LoadOptions) (Config, error) {
 	overrideString((*string)(&raw.ModelsAllow), "MODELS_ALLOW")
 	overrideString(&raw.CORSAllowedOrigin, "CORS_ALLOWED_ORIGIN")
 	overrideString(&raw.RequestJitter, "REQUEST_JITTER")
+	overrideString(&raw.UnfitEgress, "UNFIT_EGRESS")
 	overrideString(&raw.CLIVersion, "CLI_VERSION")
 	overrideString(&raw.ModelAliases, "MODEL_ALIASES")
 	overrideInt(&raw.TransientRetries, "TRANSIENT_RETRIES")
@@ -516,6 +517,7 @@ func LoadOpts(configPath string, opts LoadOptions) (Config, error) {
 		ModelsAllow:              splitList(string(raw.ModelsAllow)),
 		CORSAllowedOrigin:        strings.TrimSpace(raw.CORSAllowedOrigin),
 		RequestJitter:            requestJitter,
+		UnfitEgress:              egressOrDefault(raw.UnfitEgress),
 		CLIVersion:               strings.TrimSpace(raw.CLIVersion),
 		ModelAliases:             modelAliases,
 		TransientRetries:         transientRetries,
@@ -714,6 +716,7 @@ func applyMappedValues(raw *rawConfig, get func(string) string) {
 	overrideStringFrom((*string)(&raw.ModelsAllow), get, "MODELS_ALLOW")
 	overrideStringFrom(&raw.CORSAllowedOrigin, get, "CORS_ALLOWED_ORIGIN")
 	overrideStringFrom(&raw.RequestJitter, get, "REQUEST_JITTER")
+	overrideStringFrom(&raw.UnfitEgress, get, "UNFIT_EGRESS")
 	overrideStringFrom(&raw.CLIVersion, get, "CLI_VERSION")
 	overrideStringFrom(&raw.ModelAliases, get, "MODEL_ALIASES")
 	overrideIntFrom(&raw.TransientRetries, get, "TRANSIENT_RETRIES")
