@@ -48,11 +48,11 @@ services:
       # `compose down` and image rebuilds. The state bind mount stays untouched.
       - db_data:/app/data
     ports:
-      # ⚠️ 0.0.0.0 default: /healthz and /metrics are ALWAYS unauthenticated by
-      # design (monitoring). Exposing this port beyond localhost publishes them
-      # publicly. Bind to loopback on the host instead if that is not wanted:
-      #   - "127.0.0.1:3457:3457"
-      - "3457:3457"
+      # /healthz and /metrics are ALWAYS unauthenticated by design (monitoring),
+      # so the host-side publish is pinned to loopback (hardened 2026-09-16).
+      # Admin surface rides the same port; external exposure must go through a
+      # fronting proxy with its own auth, never a direct 0.0.0.0 publish.
+      - "127.0.0.1:3457:3457"
     restart: unless-stopped
     # Docker's default 10s stop timeout races the app's shutdown: the
     # httpServer.Shutdown gets 10s, then Pool.Shutdown gets its own 20s
